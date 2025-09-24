@@ -1,0 +1,15 @@
+{
+  "metadata": {
+    "timestamp": "2025-09-24T14:39:00Z",
+    "version": "1.0",
+    "type": "load_test_payload"
+  },
+  "data": {
+    "payload": "
+QdbiuuJEA6cynpSY922WbPaNLYYV6sGSoBuTgcc2x0pOBbDJ6sHFWX6ykJQ8I0JxOVJydBQlQGVXoh3Pj1tcZhMye7ZIIEJvwHI2SIUXRY6Nfa7D5TCbkoGIuhodMtnvqHdIob7dgHbZCrzgJ6cFJsiD9xPrP71Qvr4hefFkXKQUYhbBvT9X4lCmKEhayWumIJdxUOKEdpR55ZNBNBhsK7N1AXMVhu9luO0afMcHDTyM5AW7ga3qgd0PKf6IgF84WjyoFi0MVjL0DYNbpckRwbwzE1aoEPRbQ9jdoIxmqbO17MopbIUWYMaNFnkn8EPhJJTdSeckcNI4hy1sRkN3rFuwEmQkxQsnoHXslXRU0Ftljh58gs9dHW9tYSInVA6I92cvoZhdl7lb8dAeKwcaTdSW05qqeTziEShNHruVvdl3OIWwTBG9P8G0sM22QYJHYybYmKxdz7BBCq3J6Z0MhizmbtQQVAXMLgAHx8VxpoOhuV1JyNU634zMMJaZAKVPgcEoJPjZ18sYq2issOKrthmh5xlUgEFo1QxViRUbEvd6SrQwf0G3r3YpnVtsJ18shJpUTlvx5mAalbfYQZLSNy4B1XKp6bY91SBRZMerPQSGCG3JU2Q8V7zHIJNhRVQbZPVzdZfg1OLvxYmREsJn1hDH5UHQyIfs7VM83lUwNZydowg0TghAn2GvUKqrmMV4TFZcxqv9485X59Hf17wBZMr3sWKp9soPRI9p2ndRFp6iHQcgSazlOAl72lWr4YGhn7eN5uSJ2"
+  },
+  "test_info": {
+    "file_size": "1KB.txt",
+    "generated_by": "load_testing_framework"
+  }
+}

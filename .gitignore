@@ -1,0 +1,72 @@
+# Ballerina build artifacts
+ballerina-passthrough/target/
+ballerina-passthrough/Dependencies.toml
+ballerina-passthrough/target/bin/*.jar
+
+# Include netty backend JAR
+!netty-backend/*.jar
+
+# JMeter results and reports
+results/
+reports/
+quick_results/
+
+# Log files
+*.log
+*.out
+nohup.out
+
+# Temporary files and directories
+tmp/
+temp/
+.tmp/
+.temp/
+
+# Process ID files
+*.pid
+
+# macOS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Backup files
+*.backup
+*.bak
+*.old
+
+# System files
+*.sys
+*.orig
+
+# JVM crash logs
+hs_err_pid*.log
+replay_pid*.log
+
+# Maven/Gradle artifacts (if used)
+.m2/
+.gradle/
+
+# Environment specific files
+.env
+.env.local
+.env.*.local
+
+# OS generated files
+*.tmp
+*.temp
+
+# Test specific temporary files
+test_output/
+*.jtl.tmp
