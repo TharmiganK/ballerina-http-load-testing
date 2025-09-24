@@ -1,5 +1,7 @@
 # Ballerina HTTP Load Testing Framework
 
+[![Load Tests](https://github.com/TharmiganK/ballerina-http-load-testing/actions/workflows/load-tests.yml/badge.svg)](https://github.com/TharmiganK/ballerina-http-load-testing/actions/workflows/load-tests.yml)
+
 A comprehensive load testing framework for Ballerina HTTP passthrough services with configurable SSL and HTTP versions.
 
 ## Project Structure
@@ -196,6 +198,53 @@ The framework uses pre-configured SSL certificates:
 1. **Modify JMeter Plan**: Edit `passthrough-test-simple.jmx`
 2. **Add New Payloads**: Place files in `samples/` directory
 3. **Update Scripts**: Modify configuration arrays in shell scripts
+
+## CI/CD Workflows
+
+This repository includes automated GitHub workflows for continuous testing:
+
+### Load Tests (`.github/workflows/load-tests.yml`)
+
+Comprehensive load testing with configurable parameters:
+
+**Triggers:**
+
+- Manual dispatch with custom parameters
+
+**Manual Workflow Parameters:**
+
+- **Service Type**: Choose specific service or test all (`h1-h1`, `h1c-h1`, `h1-h1c`, `h1c-h1c`, `all`)
+- **Payload Sizes**: Comma-separated list (`10KB,100KB,1MB`)
+- **User Counts**: Comma-separated list (`50,100,500`)  
+- **Test Duration**: Duration in seconds (default: 300)
+
+**Example Manual Runs:**
+
+```bash
+# Test all services with small payloads
+Service Type: all
+Payload Sizes: 1KB,5KB  
+User Counts: 50,100
+Duration: 180
+
+# Performance regression test  
+Service Type: h1-h1,h1c-h1c
+Payload Sizes: 10KB,100KB
+User Counts: 100,500
+Duration: 300
+```
+
+**Workflow Outputs:**
+
+- 📈 Individual test results (JTL format)
+- 📊 Consolidated performance report
+- 💬 Automated PR comments with results
+- 🗄️ 90-day result retention
+
+### Running Workflows
+
+1. **Manual**: Go to Actions → Load Tests → Run workflow
+2. **Results**: Download artifacts or view in workflow summary
 
 ## Troubleshooting
 
