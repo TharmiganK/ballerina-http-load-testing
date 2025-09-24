@@ -8,8 +8,10 @@ A comprehensive load testing framework for Ballerina HTTP passthrough services w
 ├── ballerina-passthrough/          # Unified Ballerina passthrough service
 │   ├── Ballerina.toml              # Project configuration  
 │   └── main.bal                    # Configurable HTTP service
-├── netty-backend/                  # Backend service JAR
-│   └── netty-http-echo-service.jar # Netty echo service
+├── netty-backend/                  # Backend service Maven project
+│   ├── pom.xml                     # Maven configuration
+│   ├── src/                        # Java source code
+│   └── target/                     # Build output (including JAR)
 ├── resources/                      # SSL certificates and keys
 │   ├── ballerinaKeystore.p12       # Keystore for HTTPS
 │   └── ballerinaTruststore.p12     # Truststore for HTTPS
@@ -41,6 +43,7 @@ The unified Ballerina service supports four different configurations through run
 ## Prerequisites
 
 - **Ballerina**: Swan Lake Update 8 or later
+- **Maven**: 3.6.x or later (for building the Netty backend)
 - **JMeter**: 5.x or later
 - **Java**: 11 or later (for running JAR files)
 - **macOS/Linux**: For shell script execution

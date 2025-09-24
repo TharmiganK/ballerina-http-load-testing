@@ -3,8 +3,8 @@ ballerina-passthrough/target/
 ballerina-passthrough/Dependencies.toml
 ballerina-passthrough/target/bin/*.jar
 
-# Include netty backend JAR
-!netty-backend/*.jar
+# Netty backend build artifacts
+netty-backend/target/
 
 # JMeter results and reports
 results/

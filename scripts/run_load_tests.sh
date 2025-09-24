@@ -5,16 +5,14 @@
 
 set -e
 
-# Co        if [ -f "${PROJECT_ROOT}/generate_samples.sh" ]; then
-            echo "Generating missing sample files..."
-            cd "${PROJECT_ROOT}"guration
+# Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 RESULTS_DIR="${PROJECT_ROOT}/results"
 REPORTS_DIR="${PROJECT_ROOT}/reports"
 BALLERINA_PROJECT_DIR="${PROJECT_ROOT}/ballerina-passthrough"
 NETTY_BACKEND_DIR="${PROJECT_ROOT}/netty-backend"
-NETTY_JAR="${NETTY_BACKEND_DIR}/netty-http-echo-service.jar"
+NETTY_JAR="${NETTY_BACKEND_DIR}/target/netty-http-echo-service.jar"
 BALLERINA_JAR="${BALLERINA_PROJECT_DIR}/target/bin/ballerina_passthrough.jar"
 
 # Service configurations - using regular arrays
@@ -131,6 +129,13 @@ check_prerequisites() {
         exit 1
     fi
     
+    # Check if Maven is installed
+    if ! command -v mvn &> /dev/null; then
+        error "Maven is not installed. Please install Maven first."
+        echo "You can install Maven using: brew install maven"
+        exit 1
+    fi
+    
     # Check if JMeter is installed
     if ! command -v jmeter &> /dev/null; then
         error "JMeter is not installed. Please install JMeter first."
@@ -207,6 +212,36 @@ build_ballerina_project() {
     cd "${PROJECT_ROOT}"
 }
 
+# Function to build netty backend project
+build_netty_backend() {
+    log "Building Netty backend project..."
+    
+    cd "${NETTY_BACKEND_DIR}"
+    
+    # Clean previous build artifacts
+    log "Cleaning previous build artifacts..."
+    mvn clean
+    
+    # Build the project
+    if ! mvn package -DskipTests; then
+        error "Failed to build Netty backend project"
+        exit 1
+    fi
+    
+    # Wait a moment for file system to sync
+    sleep 1
+    
+    if [ ! -f "$NETTY_JAR" ]; then
+        error "Netty JAR not found after build: $NETTY_JAR"
+        error "Available files in target directory:"
+        ls -la "${NETTY_BACKEND_DIR}/target/" || true
+        exit 1
+    fi
+    
+    log "Netty backend project built successfully"
+    cd "${PROJECT_ROOT}"
+}
+
 # Function to start netty backend
 start_backend() {
     local use_ssl=$1
@@ -219,16 +254,19 @@ start_backend() {
     stop_backend
     
     # Build command with SSL options
-    local cmd="java -jar \"$NETTY_JAR\" --ssl $use_ssl --http2 false"
+    local cmd="java -jar $NETTY_JAR --ssl $use_ssl --http2 false --port $backend_port"
     if [ "$use_ssl" = "true" ]; then
-        cmd="$cmd --key-store-file \"${PROJECT_ROOT}/resources/ballerinaKeystore.p12\" --key-store-password ballerina"
+        cmd="$cmd --key-store-file ${PROJECT_ROOT}/resources/ballerinaKeystore.p12 --key-store-password ballerina"
     fi
     
     # Start backend in background
     cd "${NETTY_BACKEND_DIR}"
+    
     nohup $cmd > "${RESULTS_DIR}/netty_backend.log" 2>&1 &
     local backend_pid=$!
     echo $backend_pid > "${RESULTS_DIR}/netty_backend.pid"
+    
+    info "Backend started with PID: $backend_pid, waiting for port $backend_port to be ready..."
     
     # Wait for backend to start
     local timeout=15
@@ -239,11 +277,26 @@ start_backend() {
             sleep $BACKEND_RESTART_WAIT
             return 0
         fi
+        
+        # Check if process is still running
+        if ! kill -0 "$backend_pid" 2>/dev/null; then
+            error "Netty backend process died unexpectedly"
+            if [ "$use_ssl" = "true" ] && grep -q "UnsatisfiedLinkError.*netty_tcnative" "${RESULTS_DIR}/netty_backend.log" 2>/dev/null; then
+                error "SSL backend failed due to missing native libraries (common on ARM64 systems)"
+                error "This is a known issue with Netty SSL on Apple Silicon Macs"
+                error "Consider using HTTP backend instead or install native SSL libraries"
+            fi
+            return 1
+        fi
+        
         sleep 1
         ((count++))
     done
     
     error "Failed to start netty backend on port $backend_port within $timeout seconds"
+    if [ "$use_ssl" = "true" ]; then
+        warn "If this is an HTTPS backend, check logs for SSL-related errors"
+    fi
     return 1
 }
 
@@ -539,6 +592,7 @@ main() {
     # Run all steps
     check_prerequisites
     ensure_sample_files
+    build_netty_backend
     build_ballerina_project
     
     # Test each service with all combinations - restart between each scenario
@@ -591,10 +645,20 @@ main() {
 case "${1:-test}" in
     "build")
         check_prerequisites
+        build_netty_backend
+        build_ballerina_project
+        ;;
+    "build-backend")
+        check_prerequisites
+        build_netty_backend
+        ;;
+    "build-ballerina")
+        check_prerequisites
         build_ballerina_project
         ;;
     "start-backend")
         check_prerequisites
+        build_netty_backend
         # Start both backends for manual testing
         start_backend "false" "8688"  # HTTP backend
         start_backend "true" "8689"   # HTTPS backend
@@ -610,8 +674,8 @@ case "${1:-test}" in
         cleanup
         ;;
     "clean")
-        if [ -f "${PROJECT_ROOT}/clean_results.sh" ]; then
-            "${PROJECT_ROOT}/clean_results.sh" all
+        if [ -f "${SCRIPT_DIR}/clean_results.sh" ]; then
+            "${SCRIPT_DIR}/clean_results.sh" all
         else
             warn "clean_results.sh not found, cleaning manually..."
             rm -rf "${RESULTS_DIR}"/* "${REPORTS_DIR}"/* 2>/dev/null || true
@@ -619,15 +683,17 @@ case "${1:-test}" in
         fi
         ;;
     *)
-        echo "Usage: $0 {build|start-backend|test|reports|cleanup|clean}"
+        echo "Usage: $0 {build|build-backend|build-ballerina|start-backend|test|reports|cleanup|clean}"
         echo ""
         echo "Commands:"
-        echo "  build         - Build the Ballerina project"
-        echo "  start-backend - Start netty backends for manual testing"
-        echo "  test          - Run complete load testing suite (default)"
-        echo "  reports       - Generate HTML reports from existing results"
-        echo "  cleanup       - Stop all services and clean up"
-        echo "  clean         - Clean test results and reports"
+        echo "  build           - Build both Netty backend and Ballerina projects"
+        echo "  build-backend   - Build only the Netty backend Maven project"
+        echo "  build-ballerina - Build only the Ballerina project"
+        echo "  start-backend   - Build and start netty backends for manual testing"
+        echo "  test            - Run complete load testing suite (default)"
+        echo "  reports         - Generate HTML reports from existing results"
+        echo "  cleanup         - Stop all services and clean up"
+        echo "  clean           - Clean test results and reports"
         echo ""
         echo "Running without arguments will execute the complete test suite."
         

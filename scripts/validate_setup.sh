@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BALLERINA_PROJECT_DIR="${PROJECT_ROOT}/ballerina-passthrough"
 NETTY_BACKEND_DIR="${PROJECT_ROOT}/netty-backend"
-NETTY_JAR="${NETTY_BACKEND_DIR}/netty-http-echo-service.jar"
+NETTY_JAR="${NETTY_BACKEND_DIR}/target/netty-http-echo-service.jar"
 BALLERINA_JAR="${BALLERINA_PROJECT_DIR}/target/bin/ballerina_passthrough.jar"
 
 # Colors for output
@@ -66,6 +66,16 @@ if command -v jmeter &> /dev/null; then
 else
     error "jmeter is not installed"
     echo "    Install with: brew install jmeter"
+    all_good=false
+fi
+
+# Check Maven
+if command -v mvn &> /dev/null; then
+    MAVEN_VERSION=$(mvn --version 2>/dev/null | head -n1 || echo "Unknown")
+    log "maven is installed ($MAVEN_VERSION)"
+else
+    error "maven is not installed"
+    echo "    Install with: brew install maven"
     all_good=false
 fi
 
@@ -157,7 +167,7 @@ fi
 
 # Check netty JAR
 if [ -f "$NETTY_JAR" ]; then
-    log "Netty JAR exists: netty-http-echo-service.jar"
+    log "Netty JAR exists: target/netty-http-echo-service.jar"
     
     # Test JAR file integrity
     if file "$NETTY_JAR" | grep -q -E "(Java archive|Zip archive)"; then
@@ -168,6 +178,7 @@ if [ -f "$NETTY_JAR" ]; then
     fi
 else
     error "Netty JAR not found: $NETTY_JAR"
+    error "Please build the backend project with: cd netty-backend && mvn clean package -DskipTests"
     all_good=false
 fi
 

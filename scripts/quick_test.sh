@@ -10,7 +10,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 RESULTS_DIR="${PROJECT_ROOT}/quick_results"
 BALLERINA_PROJECT_DIR="${PROJECT_ROOT}/ballerina-passthrough"
 NETTY_BACKEND_DIR="${PROJECT_ROOT}/netty-backend"
-NETTY_JAR="${NETTY_BACKEND_DIR}/netty-http-echo-service.jar"
+NETTY_JAR="${NETTY_BACKEND_DIR}/target/netty-http-echo-service.jar"
 BALLERINA_JAR="${BALLERINA_PROJECT_DIR}/target/bin/ballerina_passthrough.jar"
 
 # Service configurations - using regular arrays
@@ -130,6 +130,7 @@ fi
 
 if [ ! -f "$NETTY_JAR" ]; then
     echo "Error: Netty JAR not found: $NETTY_JAR"
+    echo "Please build first with: cd netty-backend && mvn clean package -DskipTests"
     exit 1
 fi
 
