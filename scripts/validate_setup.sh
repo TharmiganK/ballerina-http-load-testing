@@ -59,13 +59,13 @@ else
     all_good=false
 fi
 
-# Check JMeter
-if command -v jmeter &> /dev/null; then
-    JMETER_VERSION=$(jmeter --version 2>/dev/null | head -n1 || echo "Unknown")
-    log "jmeter is installed ($JMETER_VERSION)"
+# Check h2load
+if command -v h2load &> /dev/null; then
+    H2LOAD_VERSION=$(h2load --version 2>/dev/null | head -n1 || echo "Unknown")
+    log "h2load is installed ($H2LOAD_VERSION)"
 else
-    error "jmeter is not installed"
-    echo "    Install with: brew install jmeter"
+    error "h2load is not installed"
+    echo "    Install with: brew install nghttp2 (macOS) or sudo apt-get install nghttp2-client (Ubuntu/Debian)"
     all_good=false
 fi
 
@@ -94,7 +94,7 @@ for dir in "${required_dirs[@]}"; do
 done
 
 # Check required files
-required_files=("passthrough-test-simple.jmx" "scripts/run_load_tests.sh" "scripts/quick_test.sh" "scripts/clean_results.sh")
+required_files=("scripts/run_load_tests.sh" "scripts/quick_test.sh" "scripts/clean_results.sh")
 for file in "${required_files[@]}"; do
     if [ -f "$PROJECT_ROOT/$file" ]; then
         log "File $file exists"
@@ -224,7 +224,7 @@ else
     error "Some prerequisites are missing. Please fix the issues above."
     echo ""
     info "Common fixes:"
-    info "  - Install missing tools: brew install ballerina jmeter"
+    info "  - Install missing tools: brew install ballerina nghttp2"
     info "  - Build project: cd ballerina-passthrough && bal build" 
     info "  - Generate samples: ./generate_samples.sh"
     info "  - Make scripts executable: chmod +x *.sh"

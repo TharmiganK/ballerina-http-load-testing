@@ -4,6 +4,8 @@
 
 A comprehensive load testing framework for Ballerina HTTP passthrough services with configurable SSL and HTTP versions.
 
+> **📋 Migration Note**: This framework has been updated to use **h2load** instead of JMeter for better performance, easier installation, and faster CI/CD execution.
+
 ## Project Structure
 
 ```bash
@@ -26,7 +28,6 @@ A comprehensive load testing framework for Ballerina HTTP passthrough services w
 │   ├── validate_setup.sh           # Environment validation
 │   ├── clean_results.sh            # Result cleanup utility
 │   └── generate_samples.sh         # Sample file generator
-├── passthrough-test-simple.jmx     # JMeter test plan
 ├── .gitignore                      # Git ignore rules
 └── README.md                       # This file
 ```
@@ -46,7 +47,7 @@ The unified Ballerina service supports four different configurations through run
 
 - **Ballerina**: Swan Lake Update 8 or later
 - **Maven**: 3.6.x or later (for building the Netty backend)
-- **JMeter**: 5.x or later
+- **h2load**: HTTP/2 benchmarking tool (part of nghttp2)
 - **Java**: 11 or later (for running JAR files)
 - **macOS/Linux**: For shell script execution
 
@@ -148,7 +149,7 @@ Clean test results and reports:
 
 1. **Build Phase**: Clean and build Ballerina project
 2. **Service Startup**: Start Netty backend and Ballerina service
-3. **Load Testing**: Execute JMeter test plan
+3. **Load Testing**: Execute h2load benchmarking
 4. **Result Collection**: Generate reports and collect metrics
 5. **Cleanup**: Stop services and prepare for next test
 
@@ -165,7 +166,7 @@ Between each test scenario, services are completely restarted to ensure:
 
 ### Directory Structure
 
-- `results/`: Raw JMeter result files (`.jtl`)
+- `results/`: Raw h2load result files (`.csv`)
 - `reports/`: HTML reports with detailed metrics
 
 ### Key Metrics
@@ -195,7 +196,7 @@ The framework uses pre-configured SSL certificates:
 
 ### Extending Tests
 
-1. **Modify JMeter Plan**: Edit `passthrough-test-simple.jmx`
+1. **Custom h2load Options**: Modify script parameters
 2. **Add New Payloads**: Place files in `samples/` directory
 3. **Update Scripts**: Modify configuration arrays in shell scripts
 
@@ -236,7 +237,7 @@ Duration: 300
 
 **Workflow Outputs:**
 
-- 📈 Individual test results (JTL format)
+- 📈 Individual test results (CSV format)
 - 📊 Consolidated performance report
 - 💬 Automated PR comments with results
 - 🗄️ 90-day result retention
@@ -267,13 +268,14 @@ Duration: 300
    bal build
    ```
 
-3. **JMeter Not Found**:
+3. **h2load Not Found**:
 
    ```bash
    # macOS with Homebrew
-   brew install jmeter
+   brew install nghttp2
    
-   # Or download from https://jmeter.apache.org/
+   # Ubuntu/Debian
+   sudo apt-get install nghttp2-client
    ```
 
 ### Debug Mode
@@ -287,7 +289,7 @@ Enable debug output for detailed logging:
 ### Log Files
 
 - Service logs: `results/` directory
-- JMeter logs: Included in HTML reports
+- h2load logs: Included in HTML reports
 
 ## Demo
 

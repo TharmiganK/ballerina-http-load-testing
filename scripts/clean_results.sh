@@ -53,7 +53,7 @@ show_usage() {
     echo "Usage: $0 [results|reports|all]"
     echo ""
     echo "Options:"
-    echo "  results  - Clean only test results (*.jtl files and logs)"
+    echo "  results  - Clean only test results (*.csv files and logs)"
     echo "  reports  - Clean only HTML reports"
     echo "  all      - Clean both results and reports (default)"
     echo ""

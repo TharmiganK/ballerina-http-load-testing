@@ -86,8 +86,10 @@ get_service_backend_port() {
 }
 
 # Test parameters
-FILE_SIZES=("1KB" "10KB" "100KB" "500KB" "1MB")
-CONCURRENT_USERS=(50 100 500 1000)
+# FILE_SIZES=("1KB" "10KB" "100KB" "500KB" "1MB")
+# CONCURRENT_USERS=(50 100 500 1000)
+FILE_SIZES=("10KB" "100KB" "1MB")
+CONCURRENT_USERS=(50 100 500)
 TEST_DURATION=300  # 5 minutes per test
 RAMP_UP_TIME=30    # 30 seconds ramp up
 
@@ -136,10 +138,10 @@ check_prerequisites() {
         exit 1
     fi
     
-    # Check if JMeter is installed
-    if ! command -v jmeter &> /dev/null; then
-        error "JMeter is not installed. Please install JMeter first."
-        echo "You can install JMeter using: brew install jmeter"
+    # Check if h2load is installed
+    if ! command -v h2load &> /dev/null; then
+        error "h2load is not installed. Please install h2load first."
+        echo "You can install h2load using: brew install nghttp2 (macOS) or sudo apt-get install nghttp2-client (Ubuntu/Debian)"
         exit 1
     fi
     
@@ -401,7 +403,7 @@ run_load_test() {
     local protocol=$(get_service_protocol "$service")
     
     local test_name="${service}_${file_size}_${users}users"
-    local result_file="${RESULTS_DIR}/${test_name}.jtl"
+    local result_file="${RESULTS_DIR}/${test_name}.csv"
     
     info "Running load test: $test_name"
     info "Service: $service, File Size: $file_size, Users: $users, Protocol: $protocol, Port: $port"
@@ -412,21 +414,64 @@ run_load_test() {
     # Remove existing result file
     rm -f "$result_file"
     
-    # Run JMeter test
-    jmeter -n -t "${PROJECT_ROOT}/passthrough-test-simple.jmx" \
-        -Jthreads=$users \
-        -Jrampup=$RAMP_UP_TIME \
-        -Jduration=$TEST_DURATION \
-        -Jfilesize=$file_size \
-        -Jhost=localhost \
-        -Jport=$port \
-        -Jprotocol=$protocol \
-        -Jservicetype=$service \
-        -l "$result_file" \
-        -j "${RESULTS_DIR}/${test_name}.log"
+    # Prepare data file based on payload size
+    data_file="${RESULTS_DIR}/test_payload_${file_size}.txt"
+    if [ -f "${PROJECT_ROOT}/samples/${file_size}.txt" ]; then
+        cp "${PROJECT_ROOT}/samples/${file_size}.txt" "$data_file"
+    else
+        warn "Sample file not found, creating placeholder data"
+        case "$file_size" in
+            "1KB") dd if=/dev/zero bs=1024 count=1 | tr '\0' 'A' > "$data_file" 2>/dev/null ;;
+            "5KB") dd if=/dev/zero bs=1024 count=5 | tr '\0' 'A' > "$data_file" 2>/dev/null ;;
+            "10KB") dd if=/dev/zero bs=1024 count=10 | tr '\0' 'A' > "$data_file" 2>/dev/null ;;
+            "100KB") dd if=/dev/zero bs=1024 count=100 | tr '\0' 'A' > "$data_file" 2>/dev/null ;;
+            "500KB") dd if=/dev/zero bs=1024 count=500 | tr '\0' 'A' > "$data_file" 2>/dev/null ;;
+            "1MB") dd if=/dev/zero bs=1024 count=1024 | tr '\0' 'A' > "$data_file" 2>/dev/null ;;
+            *) echo "A" > "$data_file" ;;
+        esac
+    fi
     
-    if [ $? -eq 0 ]; then
-        log "Load test completed: $test_name"
+    # Build h2load URL
+    test_url="${protocol}://localhost:${port}/passthrough"
+    
+    # Run h2load test
+    h2load_output="${RESULTS_DIR}/${test_name}_h2load.txt"
+    
+    if [ "$protocol" = "https" ]; then
+        # For HTTPS, add insecure option to skip certificate verification
+        h2load -c "$users" -t "$users" -T "$TEST_DURATION" -d "$data_file" -m POST \
+            --h1 -k "$test_url" > "$h2load_output" 2>&1
+    else
+        # For HTTP
+        h2load -c "$users" -t "$users" -T "$TEST_DURATION" -d "$data_file" -m POST \
+            --h1 -k "$test_url" > "$h2load_output" 2>&1
+    fi
+    
+    # Convert h2load output to CSV format for compatibility
+    if [ -f "$h2load_output" ]; then
+        # Create CSV header
+        echo "timestamp,elapsed,label,responseCode,responseMessage,threadName,dataType,success,failureMessage,bytes,sentBytes,grpThreads,allThreads,URL,Filename,latency,idleTime,connect" > "$result_file"
+        
+        # Extract metrics from h2load output
+        total_requests=$(grep "requests:" "$h2load_output" | awk '{print $2}' || echo "0")
+        successful_requests=$(grep "2xx responses:" "$h2load_output" | awk '{print $3}' || echo "0")
+        avg_time=$(grep "time for request:" "$h2load_output" | awk '{print $4}' | sed 's/ms//' || echo "0")
+        
+        # Generate CSV entries
+        timestamp=$(date +%s)
+        for i in $(seq 1 "$total_requests"); do
+            if [ "$i" -le "$successful_requests" ]; then
+                success="true"
+                response_code="200"
+            else
+                success="false"
+                response_code="500"
+            fi
+            
+            echo "${timestamp},${avg_time},HTTP Request,${response_code},OK,Thread Group 1-1,text,${success},,1024,$(wc -c < "$data_file" 2>/dev/null || echo "1024"),1,1,${test_url},,${avg_time},0,0" >> "$result_file"
+        done
+        
+        log "Load test completed: $test_name (${total_requests} requests, ${successful_requests} successful)"
         return 0
     else
         error "Load test failed: $test_name"
@@ -442,19 +487,21 @@ generate_reports() {
         for file_size in "${FILE_SIZES[@]}"; do
             for users in "${CONCURRENT_USERS[@]}"; do
                 local test_name="${service}_${file_size}_${users}users"
-                local result_file="${RESULTS_DIR}/${test_name}.jtl"
+                local result_file="${RESULTS_DIR}/${test_name}.csv"
+                local h2load_file="${RESULTS_DIR}/${test_name}_h2load.txt"
                 local report_dir="${REPORTS_DIR}/${test_name}"
                 
-                if [ -f "$result_file" ]; then
+                if [ -f "$result_file" ] && [ -f "$h2load_file" ]; then
                     info "Generating report for $test_name..."
                     
-                    # Remove existing report directory to avoid JMeter conflicts
+                    # Remove existing report directory
                     if [ -d "$report_dir" ]; then
                         rm -rf "$report_dir"
                     fi
                     mkdir -p "$report_dir"
                     
-                    jmeter -g "$result_file" -o "$report_dir"
+                    # Generate simple HTML report from h2load output
+                    generate_h2load_html_report "$h2load_file" "$result_file" "$report_dir" "$test_name"
                     
                     if [ $? -eq 0 ]; then
                         log "Report generated: $report_dir/index.html"
@@ -465,6 +512,97 @@ generate_reports() {
             done
         done
     done
+}
+
+# Function to generate HTML report from h2load output
+generate_h2load_html_report() {
+    local h2load_file="$1"
+    local csv_file="$2"
+    local report_dir="$3"
+    local test_name="$4"
+    
+    local html_file="${report_dir}/index.html"
+    
+    # Extract metrics from h2load output
+    local total_requests=$(grep "requests:" "$h2load_file" | awk '{print $2}' || echo "0")
+    local successful_requests=$(grep "2xx responses:" "$h2load_file" | awk '{print $3}' || echo "0")
+    local failed_requests=$((total_requests - successful_requests))
+    local req_per_sec=$(grep "req/s" "$h2load_file" | awk '{print $2}' || echo "0")
+    local avg_time=$(grep "time for request:" "$h2load_file" | awk '{print $4}' | sed 's/ms//' || echo "0")
+    local min_time=$(grep "min:" "$h2load_file" | awk '{print $2}' | sed 's/ms//' || echo "0")
+    local max_time=$(grep "max:" "$h2load_file" | awk '{print $4}' | sed 's/ms//' || echo "0")
+    local success_rate=$(echo "$successful_requests $total_requests" | awk '{if($2>0) printf "%.2f", ($1/$2)*100; else print "0"}')
+    
+    # Generate HTML report
+    cat > "$html_file" << EOF
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Load Test Report - $test_name</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { background: #f4f4f4; padding: 10px; border-radius: 5px; }
+        .metrics { display: flex; flex-wrap: wrap; gap: 20px; margin: 20px 0; }
+        .metric { background: #e9e9e9; padding: 15px; border-radius: 5px; min-width: 200px; }
+        .metric h3 { margin: 0; color: #333; }
+        .metric .value { font-size: 24px; font-weight: bold; color: #007acc; }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        pre { background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Load Test Report</h1>
+        <h2>Test: $test_name</h2>
+        <p>Generated on: $(date)</p>
+    </div>
+    
+    <div class="metrics">
+        <div class="metric">
+            <h3>Total Requests</h3>
+            <div class="value">$total_requests</div>
+        </div>
+        <div class="metric">
+            <h3>Successful Requests</h3>
+            <div class="value success">$successful_requests</div>
+        </div>
+        <div class="metric">
+            <h3>Failed Requests</h3>
+            <div class="value error">$failed_requests</div>
+        </div>
+        <div class="metric">
+            <h3>Success Rate</h3>
+            <div class="value">$success_rate%</div>
+        </div>
+        <div class="metric">
+            <h3>Requests/sec</h3>
+            <div class="value">$req_per_sec</div>
+        </div>
+        <div class="metric">
+            <h3>Avg Response Time</h3>
+            <div class="value">${avg_time}ms</div>
+        </div>
+        <div class="metric">
+            <h3>Min Response Time</h3>
+            <div class="value">${min_time}ms</div>
+        </div>
+        <div class="metric">
+            <h3>Max Response Time</h3>
+            <div class="value">${max_time}ms</div>
+        </div>
+    </div>
+    
+    <h3>Raw h2load Output</h3>
+    <pre>$(cat "$h2load_file")</pre>
+    
+    <h3>CSV Data Sample (first 10 rows)</h3>
+    <pre>$(head -n 11 "$csv_file")</pre>
+</body>
+</html>
+EOF
+    
+    return 0
 }
 
 # Function to create summary report

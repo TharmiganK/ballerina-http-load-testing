@@ -82,7 +82,7 @@ echo "  ./scripts/quick_test.sh h1-h1 10KB.txt 200 60s"
 echo
 step "6. Results and Reports"
 info "After running tests, check:"
-echo "  - results/ directory for raw JMeter output (.jtl files)"
+echo "  - results/ directory for raw h2load output (.csv files)"
 echo "  - reports/ directory for HTML reports with detailed metrics"
 
 echo

@@ -6,7 +6,7 @@ ballerina-passthrough/target/bin/*.jar
 # Netty backend build artifacts
 netty-backend/target/
 
-# JMeter results and reports
+# Load test results and reports
 results/
 reports/
 quick_results/
