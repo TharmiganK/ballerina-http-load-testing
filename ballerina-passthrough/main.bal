@@ -7,10 +7,13 @@ configurable string epKeyPassword = "ballerina";
 
 configurable boolean clientSsl = true;
 configurable boolean serverSsl = true;
+configurable boolean clientHttp2 = false;
+configurable boolean serverHttp2 = false;
 configurable int serverPort = 9091;
+configurable int backendPort = 8688;
 
 listener http:Listener securedEP = new (serverPort,
-    httpVersion = http:HTTP_1_1,
+    httpVersion = serverHttp2 ? http:HTTP_2_0 : http:HTTP_1_1,
     secureSocket = serverSsl ? {
             key: {
                 path: epKeyPath,
@@ -19,19 +22,27 @@ listener http:Listener securedEP = new (serverPort,
         } : ()
 );
 
-final http:Client nettyEP = check new (clientSsl ? "https://localhost:8689" : "http://localhost:8688",
-    httpVersion = http:HTTP_1_1,
+final http:Client nettyEP = check new (clientSsl ? "https://localhost:" + backendPort.toString() : "http://localhost:" + backendPort.toString(),
+    httpVersion = clientHttp2 ? http:HTTP_2_0 : http:HTTP_1_1,
     secureSocket = clientSsl ? {
-        cert: {
-            path: epTrustStorePath,
-            password: epKeyPassword
-        },
-        verifyHostName: false
-    } : ()
+            cert: {
+                path: epTrustStorePath,
+                password: epKeyPassword
+            },
+            verifyHostName: false
+        } : ()
 );
 
 public function main() {
-    log:printInfo("service started", port = serverPort, backend = clientSsl ? "h1" : "h1c", passthrough = serverSsl ? "h1" : "h1c");
+    string clientProtocol = clientHttp2 ? "h2" : "h1";
+    if (!clientSsl) {
+        clientProtocol = clientProtocol + "c";
+    }
+    string serverProtocol = serverHttp2 ? "h2" : "h1";
+    if (!serverSsl) {
+        serverProtocol = serverProtocol + "c";
+    }
+    log:printInfo("service started", port = serverPort, backend = clientProtocol, passthrough = serverProtocol);
 }
 
 service /passthrough on securedEP {

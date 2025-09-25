@@ -16,13 +16,17 @@ NETTY_JAR="${NETTY_BACKEND_DIR}/target/netty-http-echo-service.jar"
 BALLERINA_JAR="${BALLERINA_PROJECT_DIR}/target/bin/ballerina_passthrough.jar"
 
 # Service configurations - using regular arrays
-SERVICE_NAMES=("h1-h1" "h1c-h1" "h1-h1c" "h1c-h1c")
-SERVICE_PORTS=(9091 9092 9093 9094)
-SERVICE_PROTOCOLS=("https" "http" "https" "http")
-SERVICE_CLIENT_SSL=(true true false false)
-SERVICE_SERVER_SSL=(true false true false)
-SERVICE_BACKEND_SSL=(true true false false)
-SERVICE_BACKEND_PORTS=(8689 8689 8688 8688)
+# Extended matrix for HTTP/1.1 and HTTP/2 combinations
+SERVICE_NAMES=("h1-h1" "h1c-h1" "h1-h1c" "h1c-h1c" "h2-h2" "h2c-h2" "h2-h2c" "h2c-h2c" "h1-h2" "h1c-h2" "h1-h2c" "h1c-h2c" "h2-h1" "h2c-h1" "h2-h1c" "h2c-h1c")
+SERVICE_PORTS=(9091 9092 9093 9094 9095 9096 9097 9098 9099 9100 9101 9102 9103 9104 9105 9106)
+SERVICE_PROTOCOLS=("https" "http" "https" "http" "https" "http" "https" "http" "https" "http" "https" "http" "https" "http" "https" "http")
+SERVICE_CLIENT_SSL=(true true false false true true false false true true false false true true false false)
+SERVICE_SERVER_SSL=(true false true false true false true false true false true false true false true false)
+SERVICE_CLIENT_HTTP2=(false false false false true true true true false false false false true true true true)
+SERVICE_SERVER_HTTP2=(false false false false true true true true false false false false false false false false)
+SERVICE_BACKEND_SSL=(true true false false true true false false true true false false true true false false)
+SERVICE_BACKEND_HTTP2=(false false false false true true true true true true true true false false false false)
+SERVICE_BACKEND_PORTS=(8689 8700 8688 8701 8691 8702 8690 8703 8693 8704 8692 8705 8706 8707 8708 8709)
 
 # Helper functions to get service properties
 get_service_port() {
@@ -65,11 +69,41 @@ get_service_server_ssl() {
     done
 }
 
+get_service_client_http2() {
+    local service=$1
+    for i in "${!SERVICE_NAMES[@]}"; do
+        if [ "${SERVICE_NAMES[$i]}" = "$service" ]; then
+            echo "${SERVICE_CLIENT_HTTP2[$i]}"
+            return
+        fi
+    done
+}
+
+get_service_server_http2() {
+    local service=$1
+    for i in "${!SERVICE_NAMES[@]}"; do
+        if [ "${SERVICE_NAMES[$i]}" = "$service" ]; then
+            echo "${SERVICE_SERVER_HTTP2[$i]}"
+            return
+        fi
+    done
+}
+
 get_service_backend_ssl() {
     local service=$1
     for i in "${!SERVICE_NAMES[@]}"; do
         if [ "${SERVICE_NAMES[$i]}" = "$service" ]; then
             echo "${SERVICE_BACKEND_SSL[$i]}"
+            return
+        fi
+    done
+}
+
+get_service_backend_http2() {
+    local service=$1
+    for i in "${!SERVICE_NAMES[@]}"; do
+        if [ "${SERVICE_NAMES[$i]}" = "$service" ]; then
+            echo "${SERVICE_BACKEND_HTTP2[$i]}"
             return
         fi
     done
@@ -85,18 +119,22 @@ get_service_backend_port() {
     done
 }
 
-# Test parameters
-# FILE_SIZES=("1KB" "10KB" "100KB" "500KB" "1MB")
-# CONCURRENT_USERS=(50 100 500 1000)
-FILE_SIZES=("10KB" "100KB" "1MB")
-CONCURRENT_USERS=(50 100 500)
+# Default test parameters
+DEFAULT_FILE_SIZES=("50B" "1KB" "10KB" "100KB" "500KB" "1MB")
+DEFAULT_CONCURRENT_USERS=(50 100 500)
+DEFAULT_SERVICE_NAMES=("h1-h1" "h1c-h1" "h1-h1c" "h1c-h1c" "h2-h2" "h2c-h2" "h2-h2c" "h2c-h2c" "h1-h2" "h1c-h2" "h1-h2c" "h1c-h2c" "h2-h1" "h2c-h1" "h2-h1c" "h2c-h1c")
+
+# Current test parameters (will be set by parse_arguments or defaults)
+FILE_SIZES=()
+CONCURRENT_USERS=()
+SELECTED_SERVICE_NAMES=()
 TEST_DURATION=300  # 5 minutes per test
 RAMP_UP_TIME=30    # 30 seconds ramp up
 
 # Restart timing configuration
 BACKEND_RESTART_WAIT=20    # seconds to wait after restarting backends
 SERVICE_RESTART_WAIT=20   # seconds to wait after restarting service
-PRE_TEST_WAIT=10           # seconds to wait before starting test
+PRE_TEST_WAIT=30           # seconds to wait before starting test
 
 # Colors for output
 RED='\033[0;31m'
@@ -119,6 +157,90 @@ error() {
 
 info() {
     echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')] $1${NC}"
+}
+
+# Function to parse command line arguments for test customization
+parse_arguments() {
+    # Set defaults
+    FILE_SIZES=("${DEFAULT_FILE_SIZES[@]}")
+    CONCURRENT_USERS=("${DEFAULT_CONCURRENT_USERS[@]}")
+    SELECTED_SERVICE_NAMES=("${DEFAULT_SERVICE_NAMES[@]}")
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --file-sizes|--files|-f)
+                if [ -z "$2" ]; then
+                    error "File sizes argument requires values"
+                    exit 1
+                fi
+                IFS=',' read -ra FILE_SIZES <<< "$2"
+                shift 2
+                ;;
+            --users|-u)
+                if [ -z "$2" ]; then
+                    error "Users argument requires values"
+                    exit 1
+                fi
+                IFS=',' read -ra CONCURRENT_USERS <<< "$2"
+                shift 2
+                ;;
+            --services|-s)
+                if [ -z "$2" ]; then
+                    error "Services argument requires values"
+                    exit 1
+                fi
+                IFS=',' read -ra SELECTED_SERVICE_NAMES <<< "$2"
+                # Validate service names
+                for service in "${SELECTED_SERVICE_NAMES[@]}"; do
+                    if [[ ! " ${SERVICE_NAMES[*]} " =~ " ${service} " ]]; then
+                        error "Invalid service name: $service"
+                        error "Valid services: ${SERVICE_NAMES[*]}"
+                        exit 1
+                    fi
+                done
+                shift 2
+                ;;
+            --duration|-d)
+                if [ -z "$2" ] || ! [[ "$2" =~ ^[0-9]+$ ]]; then
+                    error "Duration must be a positive number (seconds)"
+                    exit 1
+                fi
+                TEST_DURATION="$2"
+                shift 2
+                ;;
+            --help|-h)
+                show_help
+                exit 0
+                ;;
+            *)
+                error "Unknown argument: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Validate file sizes
+    for size in "${FILE_SIZES[@]}"; do
+        if [[ ! "$size" =~ ^[0-9]+(B|KB|MB)$ ]]; then
+            error "Invalid file size format: $size (use format like 1KB, 10KB, 1MB)"
+            exit 1
+        fi
+    done
+    
+    # Validate concurrent users
+    for users in "${CONCURRENT_USERS[@]}"; do
+        if ! [[ "$users" =~ ^[0-9]+$ ]] || [ "$users" -le 0 ]; then
+            error "Invalid number of users: $users (must be positive integer)"
+            exit 1
+        fi
+    done
+    
+    info "Test configuration:"
+    info "  File sizes: ${FILE_SIZES[*]}"
+    info "  Concurrent users: ${CONCURRENT_USERS[*]}"
+    info "  Services: ${SELECTED_SERVICE_NAMES[*]}"
+    info "  Test duration: ${TEST_DURATION} seconds"
 }
 
 # Function to check prerequisites
@@ -248,15 +370,17 @@ build_netty_backend() {
 start_backend() {
     local use_ssl=$1
     local backend_port=$2
+    local use_http2=$3
     
     local backend_type=$([ "$use_ssl" = "true" ] && echo "HTTPS" || echo "HTTP")
-    log "Starting netty backend ($backend_type) on port $backend_port..."
+    local http_version=$([ "$use_http2" = "true" ] && echo "HTTP/2" || echo "HTTP/1.1")
+    log "Starting netty backend ($backend_type, $http_version) on port $backend_port..."
     
     # Stop existing backend if running
     stop_backend
     
-    # Build command with SSL options
-    local cmd="java -jar $NETTY_JAR --ssl $use_ssl --http2 false --port $backend_port"
+    # Build command with SSL and HTTP/2 options
+    local cmd="java -jar $NETTY_JAR --ssl $use_ssl --http2 $use_http2 --port $backend_port"
     if [ "$use_ssl" = "true" ]; then
         cmd="$cmd --key-store-file ${PROJECT_ROOT}/resources/ballerinaKeystore.p12 --key-store-password ballerina"
     fi
@@ -275,7 +399,7 @@ start_backend() {
     local count=0
     while [ $count -lt $timeout ]; do
         if lsof -Pi :$backend_port -sTCP:LISTEN -t >/dev/null 2>&1; then
-            log "Netty backend ($backend_type) started successfully on port $backend_port (PID: $backend_pid)"
+            log "Netty backend ($backend_type, $http_version) started successfully on port $backend_port (PID: $backend_pid)"
             sleep $BACKEND_RESTART_WAIT
             return 0
         fi
@@ -331,8 +455,11 @@ start_service() {
     local port=$(get_service_port "$service")
     local client_ssl=$(get_service_client_ssl "$service")
     local server_ssl=$(get_service_server_ssl "$service")
+    local client_http2=$(get_service_client_http2 "$service")
+    local server_http2=$(get_service_server_http2 "$service")
+    local backend_port=$(get_service_backend_port "$service")
     
-    info "Starting Ballerina service: $service (port: $port, clientSsl: $client_ssl, serverSsl: $server_ssl)"
+    info "Starting Ballerina service: $service (port: $port, clientSsl: $client_ssl, serverSsl: $server_ssl, clientHttp2: $client_http2, serverHttp2: $server_http2, backendPort: $backend_port)"
     
     # Stop existing service if running
     stop_service
@@ -349,7 +476,10 @@ start_service() {
     nohup java -jar "$BALLERINA_JAR" \
         -CclientSsl=$client_ssl \
         -CserverSsl=$server_ssl \
+        -CclientHttp2=$client_http2 \
+        -CserverHttp2=$server_http2 \
         -CserverPort=$port \
+        -CbackendPort=$backend_port \
         > "${RESULTS_DIR}/${service}.log" 2>&1 &
     local service_pid=$!
     echo $service_pid > "${RESULTS_DIR}/ballerina_service.pid"
@@ -427,6 +557,7 @@ run_load_test() {
             "100KB") dd if=/dev/zero bs=1024 count=100 | tr '\0' 'A' > "$data_file" 2>/dev/null ;;
             "500KB") dd if=/dev/zero bs=1024 count=500 | tr '\0' 'A' > "$data_file" 2>/dev/null ;;
             "1MB") dd if=/dev/zero bs=1024 count=1024 | tr '\0' 'A' > "$data_file" 2>/dev/null ;;
+            "50B") dd if=/dev/zero bs=1 count=50 | tr '\0' 'A' > "$data_file" 2>/dev/null ;;
             *) echo "A" > "$data_file" ;;
         esac
     fi
@@ -439,14 +570,31 @@ run_load_test() {
     
     echo "Running h2load test for $service $file_size with $users users..."
     
+    # Determine if we should force HTTP/1.1 or use HTTP/2
+    # h2load uses HTTP/2 by default for HTTPS connections, HTTP/1.1 for HTTP connections
+    # We need to force HTTP/1.1 when testing h1/h1c scenarios
+    if [[ "$service" =~ ^h1 ]]; then
+        # Force HTTP/1.1 for services that start with h1
+        H2LOAD_HTTP_VERSION="--h1"
+        echo "Forcing HTTP/1.1 client protocol"
+    else
+        # Use default (HTTP/2 for HTTPS, HTTP/1.1 for HTTP)
+        H2LOAD_HTTP_VERSION=""
+        if [ "$protocol" = "https" ]; then
+            echo "Using HTTP/2 client protocol (default for HTTPS)"
+        else
+            echo "Using HTTP/1.1 client protocol (default for HTTP)"
+        fi
+    fi
+    
     if [ "$protocol" = "https" ]; then
         # For HTTPS
         h2load -c "$users" -t 1 -D "$TEST_DURATION" -d "$data_file" \
-            --h1 "$test_url" 2>&1 | tee "$h2load_output"
+            $H2LOAD_HTTP_VERSION "$test_url" 2>&1 | tee "$h2load_output"
     else
         # For HTTP
         h2load -c "$users" -t 1 -D "$TEST_DURATION" -d "$data_file" \
-            --h1 "$test_url" 2>&1 | tee "$h2load_output"
+            $H2LOAD_HTTP_VERSION "$test_url" 2>&1 | tee "$h2load_output"
     fi
     
     # Convert h2load output to simplified CSV format
@@ -504,7 +652,7 @@ run_load_test() {
 generate_reports() {
     log "Generating HTML reports..."
     
-    for service in "${SERVICE_NAMES[@]}"; do
+    for service in "${SELECTED_SERVICE_NAMES[@]}"; do
         for file_size in "${FILE_SIZES[@]}"; do
             for users in "${CONCURRENT_USERS[@]}"; do
                 local test_name="${service}_${file_size}_${users}users"
@@ -691,7 +839,7 @@ create_summary_report() {
 EOF
 
     # Add table rows for each test
-    for service in "${SERVICE_NAMES[@]}"; do
+    for service in "${SELECTED_SERVICE_NAMES[@]}"; do
         for file_size in "${FILE_SIZES[@]}"; do
             for users in "${CONCURRENT_USERS[@]}"; do
                 local test_name="${service}_${file_size}_${users}users"
@@ -755,10 +903,11 @@ main() {
     build_ballerina_project
     
     # Test each service with all combinations - restart between each scenario
-    for service in "${SERVICE_NAMES[@]}"; do
+    for service in "${SELECTED_SERVICE_NAMES[@]}"; do
         log "Testing service: $service"
         
         local backend_ssl=$(get_service_backend_ssl "$service")
+        local backend_http2=$(get_service_backend_http2 "$service")
         local backend_port=$(get_service_backend_port "$service")
         
         # Run tests for all file sizes and user counts
@@ -767,7 +916,7 @@ main() {
                 log "=== Test Scenario: $service, $file_size, $users users ==="
                 
                 # Restart backend for clean state
-                if ! start_backend "$backend_ssl" "$backend_port"; then
+                if ! start_backend "$backend_ssl" "$backend_port" "$backend_http2"; then
                     error "Failed to start backend for $service, skipping remaining tests"
                     break 3
                 fi
@@ -800,8 +949,109 @@ main() {
     log "Summary report: $REPORTS_DIR/load_test_summary.html"
 }
 
+# Function to display help
+show_help() {
+    cat << EOF
+Ballerina HTTP Load Testing - Main Load Testing Script
+
+USAGE:
+    ./run_load_tests.sh [COMMAND] [OPTIONS]
+    ./run_load_tests.sh test [OPTIONS]
+
+COMMANDS:
+    build           Build both Netty backend and Ballerina projects
+    build-backend   Build only the Netty backend Maven project  
+    build-ballerina Build only the Ballerina project
+    start-backend   Build and start all netty backends for manual testing
+    test            Run complete load testing suite (default)
+    reports         Generate HTML reports from existing results
+    cleanup         Stop all services and clean up processes
+    clean           Clean test results and reports
+    help, -h, --help Show this help message
+
+OPTIONS (for 'test' command):
+    -f, --file-sizes, --files SIZES    Comma-separated file sizes (e.g., "1KB,10KB,100KB")
+    -u, --users USERS                   Comma-separated user counts (e.g., "50,100,500")
+    -s, --services SERVICES             Comma-separated service names (e.g., "h1-h1,h2-h2")
+    -d, --duration SECONDS              Test duration in seconds (default: 300)
+    -h, --help                          Show this help message
+
+DESCRIPTION:
+    This script orchestrates comprehensive HTTP load testing across 16 service 
+    configurations combining HTTP/1.1, HTTP/2, SSL, and clear text protocols.
+    
+    The test matrix includes:
+    • 4 Pure HTTP/1.1 configurations (h1-h1, h1c-h1, h1-h1c, h1c-h1c)
+    • 4 Pure HTTP/2 configurations (h2-h2, h2c-h2, h2-h2c, h2c-h2c)
+    • 4 Mixed HTTP/1.1→HTTP/2 configurations (h1-h2, h1c-h2, h1-h2c, h1c-h2c)
+    • 4 Mixed HTTP/2→HTTP/1.1 configurations (h2-h1, h2c-h1, h2-h1c, h2c-h1c)
+
+DEFAULT PARAMETERS:
+    File sizes:       50B, 1KB, 10KB, 100KB, 500KB, 1MB
+    Concurrent users: 50, 100, 500
+    Services:         All 16 service configurations
+    Test duration:    300 seconds (5 minutes) per test
+    
+AVAILABLE SERVICES:
+    ${SERVICE_NAMES[*]}
+
+AVAILABLE FILE SIZES:
+    Any valid format like: 50B, 1KB, 5KB, 10KB, 100KB, 500KB, 1MB
+    
+OUTPUT:
+    Results:        results/ directory with CSV files and detailed logs
+    Reports:        reports/ directory with HTML reports and summaries
+    
+EXAMPLES:
+    # Run complete test suite with defaults
+    ./run_load_tests.sh
+    ./run_load_tests.sh test
+    
+    # Test specific file sizes
+    ./run_load_tests.sh test --file-sizes "1KB,10KB"
+    
+    # Test with specific user counts
+    ./run_load_tests.sh test --users "50,100"
+    
+    # Test specific services only
+    ./run_load_tests.sh test --services "h1-h1,h2-h2"
+    
+    # Test with custom duration (60 seconds)
+    ./run_load_tests.sh test --duration 60
+    
+    # Combination of options
+    ./run_load_tests.sh test -f "1KB,100KB" -u "50,200" -s "h1-h1,h2-h2" -d 120
+    
+    # Build projects only
+    ./run_load_tests.sh build
+    
+    # Start backends for manual testing
+    ./run_load_tests.sh start-backend
+    
+    # Generate reports from existing results
+    ./run_load_tests.sh reports
+
+PREREQUISITES:
+    • Ballerina Swan Lake Update 8 or later
+    • Maven 3.6.x or later
+    • h2load (nghttp2 package)
+    • Java 11 or later
+
+SEE ALSO:
+    • ./quick_test.sh        - Test individual service configurations
+    • ./http2_demo.sh        - Interactive HTTP/2 demonstration  
+    • ./validate_setup.sh    - Validate environment setup
+    • HTTP2_EXTENSION.md     - Detailed HTTP/2 documentation
+
+EOF
+}
+
 # Command line interface
 case "${1:-test}" in
+    "help"|"-h"|"--help")
+        show_help
+        exit 0
+        ;;
     "build")
         check_prerequisites
         build_netty_backend
@@ -818,11 +1068,16 @@ case "${1:-test}" in
     "start-backend")
         check_prerequisites
         build_netty_backend
-        # Start both backends for manual testing
-        start_backend "false" "8688"  # HTTP backend
-        start_backend "true" "8689"   # HTTPS backend
+        # Start all backends for manual testing
+        start_backend "false" "8688" "false"  # HTTP/1.1 backend
+        start_backend "true" "8689" "false"   # HTTPS/1.1 backend  
+        start_backend "false" "8690" "true"   # HTTP/2 backend
+        start_backend "true" "8691" "true"    # HTTPS/2 backend
         ;;
     "test")
+        # Parse test-specific arguments
+        shift  # Remove 'test' command
+        parse_arguments "$@"
         main
         ;;
     "reports")
@@ -841,23 +1096,32 @@ case "${1:-test}" in
             log "Results and reports cleaned"
         fi
         ;;
+    --file-sizes|--files|-f|--users|-u|--services|-s|--duration|-d)
+        # If called with test options but no 'test' command, default to test
+        parse_arguments "$@"
+        main
+        ;;
     *)
-        echo "Usage: $0 {build|build-backend|build-ballerina|start-backend|test|reports|cleanup|clean}"
-        echo ""
-        echo "Commands:"
-        echo "  build           - Build both Netty backend and Ballerina projects"
-        echo "  build-backend   - Build only the Netty backend Maven project"
-        echo "  build-ballerina - Build only the Ballerina project"
-        echo "  start-backend   - Build and start netty backends for manual testing"
-        echo "  test            - Run complete load testing suite (default)"
-        echo "  reports         - Generate HTML reports from existing results"
-        echo "  cleanup         - Stop all services and clean up"
-        echo "  clean           - Clean test results and reports"
-        echo ""
-        echo "Running without arguments will execute the complete test suite."
-        
         if [ $# -eq 0 ]; then
+            # No arguments provided - run default test
+            FILE_SIZES=("${DEFAULT_FILE_SIZES[@]}")
+            CONCURRENT_USERS=("${DEFAULT_CONCURRENT_USERS[@]}")
+            SELECTED_SERVICE_NAMES=("${DEFAULT_SERVICE_NAMES[@]}")
             main
+        else
+            echo "Usage: $0 [COMMAND] [OPTIONS]"
+            echo ""
+            echo "Commands:"
+            echo "  build           - Build both Netty backend and Ballerina projects"
+            echo "  build-backend   - Build only the Netty backend Maven project"
+            echo "  build-ballerina - Build only the Ballerina project"
+            echo "  start-backend   - Build and start netty backends for manual testing"
+            echo "  test [OPTIONS]  - Run load testing suite with optional parameters"
+            echo "  reports         - Generate HTML reports from existing results"
+            echo "  cleanup         - Stop all services and clean up"
+            echo "  clean           - Clean test results and reports"
+            echo ""
+            echo "For detailed options and examples, run: $0 --help"
         fi
         ;;
 esac
