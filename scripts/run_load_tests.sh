@@ -437,39 +437,60 @@ run_load_test() {
     # Run h2load test
     h2load_output="${RESULTS_DIR}/${test_name}_h2load.txt"
     
+    echo "Running h2load test for $service $file_size with $users users..."
+    
     if [ "$protocol" = "https" ]; then
-        # For HTTPS, add insecure option to skip certificate verification
-        h2load -c "$users" -t "$users" -T "$TEST_DURATION" -d "$data_file" -m POST \
-            --h1 -k "$test_url" > "$h2load_output" 2>&1
+        # For HTTPS
+        h2load -c "$users" -t 1 -D "$TEST_DURATION" -d "$data_file" \
+            --h1 "$test_url" 2>&1 | tee "$h2load_output"
     else
         # For HTTP
-        h2load -c "$users" -t "$users" -T "$TEST_DURATION" -d "$data_file" -m POST \
-            --h1 -k "$test_url" > "$h2load_output" 2>&1
+        h2load -c "$users" -t 1 -D "$TEST_DURATION" -d "$data_file" \
+            --h1 "$test_url" 2>&1 | tee "$h2load_output"
     fi
     
-    # Convert h2load output to CSV format for compatibility
+    # Convert h2load output to simplified CSV format
     if [ -f "$h2load_output" ]; then
-        # Create CSV header
-        echo "timestamp,elapsed,label,responseCode,responseMessage,threadName,dataType,success,failureMessage,bytes,sentBytes,grpThreads,allThreads,URL,Filename,latency,idleTime,connect" > "$result_file"
+        # Create simplified CSV header
+        echo "test_type,total_requests,duration_sec,throughput_rps,avg_latency_ms,error_rate_percent" > "$result_file"
         
         # Extract metrics from h2load output
         total_requests=$(grep "requests:" "$h2load_output" | awk '{print $2}' || echo "0")
-        successful_requests=$(grep "2xx responses:" "$h2load_output" | awk '{print $3}' || echo "0")
-        avg_time=$(grep "time for request:" "$h2load_output" | awk '{print $4}' | sed 's/ms//' || echo "0")
+        successful_requests=$(grep "status codes:" "$h2load_output" | awk '{print $3}' || echo "0")
+        failed_requests=$((total_requests - successful_requests))
         
-        # Generate CSV entries
-        timestamp=$(date +%s)
-        for i in $(seq 1 "$total_requests"); do
-            if [ "$i" -le "$successful_requests" ]; then
-                success="true"
-                response_code="200"
-            else
-                success="false"
-                response_code="500"
-            fi
-            
-            echo "${timestamp},${avg_time},HTTP Request,${response_code},OK,Thread Group 1-1,text,${success},,1024,$(wc -c < "$data_file" 2>/dev/null || echo "1024"),1,1,${test_url},,${avg_time},0,0" >> "$result_file"
-        done
+        # Extract throughput (requests per second) from "finished in X.XXs, YYYY.YY req/s, Z.ZZMB/s" line
+        throughput=$(grep "finished in.*req/s" "$h2load_output" | sed -n 's/.*finished in [0-9.]*s, \([0-9.]*\) req\/s.*/\1/p' || echo "0")
+        
+        # Extract average latency (mean value from time for request line)
+        avg_latency=$(grep "time for request:" "$h2load_output" | awk '{print $6}' || echo "0ms")
+        # Convert to ms if it's in different units
+        if [[ "$avg_latency" == *"us"* ]]; then
+            avg_latency=$(echo "$avg_latency" | sed 's/us$//' | awk '{printf "%.2f", $1/1000}')
+        elif [[ "$avg_latency" == *"ms"* ]]; then
+            avg_latency=$(echo "$avg_latency" | sed 's/ms$//')
+        elif [[ "$avg_latency" == *"s"* ]]; then
+            avg_latency=$(echo "$avg_latency" | sed 's/s$//' | awk '{printf "%.2f", $1*1000}')
+        fi
+        
+        # Calculate error rate
+        if [ "$total_requests" -gt 0 ]; then
+            error_rate=$(awk "BEGIN {printf \"%.2f\", ($failed_requests/$total_requests)*100}")
+        else
+            error_rate="0.00"
+        fi
+        
+        # Ensure variables have default values
+        total_requests=${total_requests:-0}
+        throughput=${throughput:-0}
+        avg_latency=${avg_latency:-0}
+        
+        # Generate simplified CSV entry
+        test_identifier="${service}_${file_size}_${users}users"
+        echo "${test_identifier},${total_requests},${TEST_DURATION},${throughput},${avg_latency},${error_rate}" >> "$result_file"
+        
+        info "Generated CSV with $total_requests total requests ($successful_requests successful, $failed_requests failed)"
+        info "Throughput: ${throughput} req/s, Average latency: ${avg_latency} ms, Error rate: ${error_rate}%"
         
         log "Load test completed: $test_name (${total_requests} requests, ${successful_requests} successful)"
         return 0
@@ -525,11 +546,11 @@ generate_h2load_html_report() {
     
     # Extract metrics from h2load output
     local total_requests=$(grep "requests:" "$h2load_file" | awk '{print $2}' || echo "0")
-    local successful_requests=$(grep "2xx responses:" "$h2load_file" | awk '{print $3}' || echo "0")
+    local successful_requests=$(grep "status codes:" "$h2load_file" | awk '{print $3}' || echo "0")
     local failed_requests=$((total_requests - successful_requests))
     local req_per_sec=$(grep "req/s" "$h2load_file" | awk '{print $2}' || echo "0")
-    local avg_time=$(grep "time for request:" "$h2load_file" | awk '{print $4}' | sed 's/ms//' || echo "0")
-    local min_time=$(grep "min:" "$h2load_file" | awk '{print $2}' | sed 's/ms//' || echo "0")
+    local avg_time=$(grep "time for request:" "$h2load_file" | awk '{print $4}' | sed 's/us$//' | sed 's/ms$//' || echo "0")
+    local min_time=$(grep "time for request:" "$h2load_file" | awk '{print $2}' | sed 's/us$//' | sed 's/ms$//' || echo "0")
     local max_time=$(grep "max:" "$h2load_file" | awk '{print $4}' | sed 's/ms//' || echo "0")
     local success_rate=$(echo "$successful_requests $total_requests" | awk '{if($2>0) printf "%.2f", ($1/$2)*100; else print "0"}')
     

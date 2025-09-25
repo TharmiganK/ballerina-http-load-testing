@@ -143,9 +143,9 @@ mkdir -p "$RESULTS_DIR"
 echo "Starting netty backend..."
 cd "$NETTY_BACKEND_DIR"
 if [ "$BACKEND_SSL" = "true" ]; then
-    nohup java -jar "$NETTY_JAR" --ssl true --http2 false --key-store-file "${PROJECT_ROOT}/resources/ballerinaKeystore.p12" --key-store-password ballerina > "$RESULTS_DIR/netty_backend.log" 2>&1 &
+    nohup java -jar "$NETTY_JAR" --port $BACKEND_PORT --ssl true --http2 false --key-store-file "${PROJECT_ROOT}/resources/ballerinaKeystore.p12" --key-store-password ballerina > "$RESULTS_DIR/netty_backend.log" 2>&1 &
 else
-    nohup java -jar "$NETTY_JAR" --ssl false --http2 false > "$RESULTS_DIR/netty_backend.log" 2>&1 &
+    nohup java -jar "$NETTY_JAR" --port $BACKEND_PORT --ssl false --http2 false > "$RESULTS_DIR/netty_backend.log" 2>&1 &
 fi
 BACKEND_PID=$!
 echo "Backend started with PID: $BACKEND_PID"
@@ -211,46 +211,62 @@ echo "Clients: $USERS, Duration: ${DURATION}s"
 h2load_output="${RESULTS_DIR}/h2load_raw_${SERVICE}_${FILE_SIZE}_${USERS}users.txt"
 csv_output="${RESULTS_DIR}/quick_test_${SERVICE}_${FILE_SIZE}_${USERS}users.csv"
 
-# Run h2load with the data file as POST body
+# Run h2load with the data file as POST body (show output in terminal and save to file)
 if [ "$PROTOCOL" = "https" ]; then
-    # For HTTPS, add insecure option to skip certificate verification
-    h2load -c "$USERS" -t "$USERS" -T "$DURATION" -d "$DATA_FILE" -m POST \
-        --h1 -k "$TEST_URL" > "$h2load_output" 2>&1
+    # For HTTPS
+    h2load -c "$USERS" -t 1 -D "$DURATION" -d "$DATA_FILE" \
+        --h1 "$TEST_URL" 2>&1 | tee "$h2load_output"
 else
     # For HTTP
-    h2load -c "$USERS" -t "$USERS" -T "$DURATION" -d "$DATA_FILE" -m POST \
-        --h1 -k "$TEST_URL" > "$h2load_output" 2>&1
+    h2load -c "$USERS" -t 1 -D "$DURATION" -d "$DATA_FILE" \
+        --h1 "$TEST_URL" 2>&1 | tee "$h2load_output"
 fi
 
-# Parse h2load output to create CSV format compatible with existing reporting
-echo "timestamp,elapsed,label,responseCode,responseMessage,threadName,dataType,success,failureMessage,bytes,sentBytes,grpThreads,allThreads,URL,Filename,latency,idleTime,connect" > "$csv_output"
+# Parse h2load output to create simplified CSV report
+echo "test_type,total_requests,duration_sec,throughput_rps,avg_latency_ms,error_rate_percent" > "$csv_output"
 
 # Extract key metrics from h2load output
 if [ -f "$h2load_output" ]; then
-    # Parse h2load output and convert to CSV format
+    # Parse h2load output for metrics
     total_requests=$(grep "requests:" "$h2load_output" | awk '{print $2}' || echo "0")
-    successful_requests=$(grep "2xx responses:" "$h2load_output" | awk '{print $3}' || echo "0")
+    successful_requests=$(grep "status codes:" "$h2load_output" | awk '{print $3}' || echo "0")
     failed_requests=$((total_requests - successful_requests))
-    avg_time=$(grep "time for request:" "$h2load_output" | awk '{print $4}' | sed 's/ms//' || echo "0")
     
-    # Generate CSV entries (simplified format for compatibility)
-    timestamp=$(date +%s)
-    for i in $(seq 1 "$total_requests"); do
-        if [ "$i" -le "$successful_requests" ]; then
-            success="true"
-            response_code="200"
-        else
-            success="false" 
-            response_code="500"
-        fi
-        
-        # Simple CSV line with basic data
-        echo "${timestamp},${avg_time},HTTP Request,${response_code},OK,Thread Group 1-1,text,${success},,1024,$(wc -c < "$DATA_FILE" 2>/dev/null || echo "1024"),1,1,${TEST_URL},,${avg_time},0,0" >> "$csv_output"
-    done
+    # Extract throughput (requests per second) from "finished in X.XXs, YYYY.YY req/s, Z.ZZMB/s" line
+    throughput=$(grep "finished in.*req/s" "$h2load_output" | sed -n 's/.*finished in [0-9.]*s, \([0-9.]*\) req\/s.*/\1/p' || echo "0")
     
-    echo "Generated $total_requests samples in CSV format"
+    # Extract average latency (mean value from time for request line)
+    avg_latency=$(grep "time for request:" "$h2load_output" | awk '{print $6}' || echo "0ms")
+    # Convert to ms if it's in different units
+    if [[ "$avg_latency" == *"us"* ]]; then
+        avg_latency=$(echo "$avg_latency" | sed 's/us$//' | awk '{printf "%.2f", $1/1000}')
+    elif [[ "$avg_latency" == *"ms"* ]]; then
+        avg_latency=$(echo "$avg_latency" | sed 's/ms$//')
+    elif [[ "$avg_latency" == *"s"* ]]; then
+        avg_latency=$(echo "$avg_latency" | sed 's/s$//' | awk '{printf "%.2f", $1*1000}')
+    fi
+    
+    # Calculate error rate
+    if [ "$total_requests" -gt 0 ]; then
+        error_rate=$(awk "BEGIN {printf \"%.2f\", ($failed_requests/$total_requests)*100}")
+    else
+        error_rate="0.00"
+    fi
+    
+    # Ensure variables have default values
+    total_requests=${total_requests:-0}
+    throughput=${throughput:-0}
+    avg_latency=${avg_latency:-0}
+    
+    # Generate simplified CSV entry
+    echo "${SERVICE},${total_requests},${DURATION},${throughput},${avg_latency},${error_rate}" >> "$csv_output"
+    
+    echo "Generated simplified CSV report with $total_requests total requests"
     echo "Successful requests: $successful_requests"
     echo "Failed requests: $failed_requests"
+    echo "Throughput: ${throughput} req/s"
+    echo "Average latency: ${avg_latency} ms"
+    echo "Error rate: ${error_rate}%"
 else
     echo "Warning: h2load output file not found"
 fi

@@ -52,8 +52,8 @@ if ping -c 1 httpbin.org &> /dev/null; then
     echo "🌐 Testing h2load against httpbin.org..."
     h2load_output=$(mktemp)
     
-    if h2load -c 2 -t 2 -T 5 -d "$test_payload" -m POST \
-        --h1 -k "https://httpbin.org/post" > "$h2load_output" 2>&1; then
+    if h2load -c 2 -t 1 -D 5 -d "$test_payload" \
+        --h1 "https://httpbin.org/post" > "$h2load_output" 2>&1; then
         echo "✅ h2load test successful!"
         echo "📊 Results:"
         grep -E "(requests:|2xx responses:|req/s)" "$h2load_output" | head -5
