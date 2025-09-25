@@ -161,11 +161,16 @@ fi
 
 # Start Ballerina service
 echo "Starting Ballerina service..."
+echo "Configuration: clientSsl=$CLIENT_SSL, serverSsl=$SERVER_SSL, port=$PORT"
 cd "$BALLERINA_PROJECT_DIR"
+echo "Current directory: $(pwd)"
+echo "JAR file: $BALLERINA_JAR"
+echo "JAR exists: $(test -f "$BALLERINA_JAR" && echo "yes" || echo "no")"
+
 nohup java -jar "$BALLERINA_JAR" \
-    -CclientSsl="$CLIENT_SSL" \
-    -CserverSsl="$SERVER_SSL" \
-    -CserverPort="$PORT" \
+    -CclientSsl=$CLIENT_SSL \
+    -CserverSsl=$SERVER_SSL \
+    -CserverPort=$PORT \
     > "$RESULTS_DIR/${SERVICE}.log" 2>&1 &
 SERVICE_PID=$!
 echo "Service started with PID: $SERVICE_PID"
@@ -176,6 +181,10 @@ sleep 10
 # Check if service is running
 if ! lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
     echo "Error: Service failed to start on port $PORT"
+    echo "Attempting to show service log:"
+    cat "$RESULTS_DIR/${SERVICE}.log" 2>/dev/null || echo "No service log available"
+    echo "Checking if process is still running:"
+    ps -p $SERVICE_PID >/dev/null 2>&1 && echo "Service process is still running" || echo "Service process has exited"
     exit 1
 fi
 

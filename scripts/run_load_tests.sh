@@ -347,9 +347,9 @@ start_service() {
     # Start the service in background
     cd "${BALLERINA_PROJECT_DIR}"
     nohup java -jar "$BALLERINA_JAR" \
-        -CclientSsl="$client_ssl" \
-        -CserverSsl="$server_ssl" \
-        -CserverPort="$port" \
+        -CclientSsl=$client_ssl \
+        -CserverSsl=$server_ssl \
+        -CserverPort=$port \
         > "${RESULTS_DIR}/${service}.log" 2>&1 &
     local service_pid=$!
     echo $service_pid > "${RESULTS_DIR}/ballerina_service.pid"

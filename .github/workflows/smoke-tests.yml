@@ -76,11 +76,18 @@ jobs:
           
           # Show logs for debugging
           echo "=== Service Logs ==="
-          cat quick_results/service.log || echo "No service log found"
+          cat quick_results/h1c-h1c.log 2>/dev/null || echo "No service log found"
           echo "=== Backend Logs ==="
-          cat quick_results/netty_backend.log || echo "No backend log found"
+          cat quick_results/netty_backend.log 2>/dev/null || echo "No backend log found"
           echo "=== Quick Test Logs ==="
-          cat quick_results/quick_test.log || echo "No quick test log found"
+          cat quick_results/quick_test.log 2>/dev/null || echo "No quick test log found"
+          echo "=== Process Information ==="
+          ps aux | grep -E "(ballerina|netty)" || echo "No relevant processes found"
+          echo "=== Port Usage ==="
+          netstat -tlnp | grep -E "(8688|9094)" || echo "No ports in use"
+          echo "=== Current Directory ==="
+          pwd
+          ls -la quick_results/ 2>/dev/null || echo "No quick_results directory"
           
           exit 1
         }
