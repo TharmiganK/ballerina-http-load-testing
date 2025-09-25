@@ -650,41 +650,42 @@ run_load_test() {
 
 # Function to generate HTML reports
 generate_reports() {
-    log "Generating HTML reports..."
+    log "Generating enhanced HTML reports with charts..."
     
-    for service in "${SELECTED_SERVICE_NAMES[@]}"; do
-        for file_size in "${FILE_SIZES[@]}"; do
-            for users in "${CONCURRENT_USERS[@]}"; do
-                local test_name="${service}_${file_size}_${users}users"
-                local result_file="${RESULTS_DIR}/${test_name}.csv"
-                local h2load_file="${RESULTS_DIR}/${test_name}_h2load.txt"
-                local report_dir="${REPORTS_DIR}/${test_name}"
+    # Generate individual reports for each test by discovering existing results
+    for csv_file in "${RESULTS_DIR}"/*.csv; do
+        if [ -f "$csv_file" ]; then
+            local test_name=$(basename "$csv_file" .csv)
+            local h2load_file="${RESULTS_DIR}/${test_name}_h2load.txt"
+            local report_dir="${REPORTS_DIR}/${test_name}"
+            
+            if [ -f "$h2load_file" ]; then
+                info "Generating enhanced report for $test_name..."
                 
-                if [ -f "$result_file" ] && [ -f "$h2load_file" ]; then
-                    info "Generating report for $test_name..."
-                    
-                    # Remove existing report directory
-                    if [ -d "$report_dir" ]; then
-                        rm -rf "$report_dir"
-                    fi
-                    mkdir -p "$report_dir"
-                    
-                    # Generate simple HTML report from h2load output
-                    generate_h2load_html_report "$h2load_file" "$result_file" "$report_dir" "$test_name"
-                    
-                    if [ $? -eq 0 ]; then
-                        log "Report generated: $report_dir/index.html"
-                    else
-                        warn "Failed to generate report for $test_name"
-                    fi
+                # Remove existing report directory
+                if [ -d "$report_dir" ]; then
+                    rm -rf "$report_dir"
                 fi
-            done
-        done
+                mkdir -p "$report_dir"
+                
+                # Generate enhanced HTML report from h2load output
+                generate_enhanced_individual_report "$h2load_file" "$csv_file" "$report_dir" "$test_name"
+                
+                if [ $? -eq 0 ]; then
+                    log "Enhanced report generated: $report_dir/index.html"
+                else
+                    warn "Failed to generate enhanced report for $test_name"
+                fi
+            fi
+        fi
     done
+    
+    # Generate the main dashboard with comparisons
+    generate_enhanced_dashboard_report
 }
 
-# Function to generate HTML report from h2load output
-generate_h2load_html_report() {
+# Function to generate enhanced HTML report from h2load output with charts
+generate_enhanced_individual_report() {
     local h2load_file="$1"
     local csv_file="$2"
     local report_dir="$3"
@@ -692,81 +693,283 @@ generate_h2load_html_report() {
     
     local html_file="${report_dir}/index.html"
     
-    # Extract metrics from h2load output
-    local total_requests=$(grep "requests:" "$h2load_file" | awk '{print $2}' || echo "0")
+    # Extract metrics from CSV file (more accurate)
+    local csv_data
+    if [ -f "$csv_file" ]; then
+        csv_data=$(tail -n 1 "$csv_file")
+        IFS=',' read -r test_type total_requests duration_sec throughput_rps avg_latency_ms error_rate_percent <<< "$csv_data"
+    else
+        # Fallback to h2load file parsing
+        total_requests=$(grep "requests:" "$h2load_file" | awk '{print $2}' || echo "0")
+        throughput_rps=$(grep "req/s" "$h2load_file" | awk '{print $2}' || echo "0")
+        avg_latency_ms="0"
+        error_rate_percent="0"
+        duration_sec="300"
+    fi
+    
+    # Extract detailed metrics from h2load output
     local successful_requests=$(grep "status codes:" "$h2load_file" | awk '{print $3}' || echo "0")
     local failed_requests=$((total_requests - successful_requests))
-    local req_per_sec=$(grep "req/s" "$h2load_file" | awk '{print $2}' || echo "0")
-    local avg_time=$(grep "time for request:" "$h2load_file" | awk '{print $4}' | sed 's/us$//' | sed 's/ms$//' || echo "0")
-    local min_time=$(grep "time for request:" "$h2load_file" | awk '{print $2}' | sed 's/us$//' | sed 's/ms$//' || echo "0")
-    local max_time=$(grep "max:" "$h2load_file" | awk '{print $4}' | sed 's/ms//' || echo "0")
-    local success_rate=$(echo "$successful_requests $total_requests" | awk '{if($2>0) printf "%.2f", ($1/$2)*100; else print "0"}')
+    local min_latency=$(grep "time for request:" "$h2load_file" | awk '{print $2}' | sed 's/[^0-9.]//g' || echo "0")
+    local max_latency=$(grep "time for request:" "$h2load_file" | awk '{print $4}' | sed 's/[^0-9.]//g' || echo "0")
+    local p95_latency=$(grep "time for request:" "$h2load_file" | awk '{print $8}' | sed 's/[^0-9.]//g' || echo "0")
     
-    # Generate HTML report
+    # Parse service information
+    local service_info=$(echo "$test_name" | cut -d'_' -f1)
+    local payload_size=$(echo "$test_name" | cut -d'_' -f2)
+    local user_count=$(echo "$test_name" | cut -d'_' -f3 | sed 's/users//')
+    
+    # Generate enhanced HTML report with Chart.js
     cat > "$html_file" << EOF
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Load Test Report - $test_name</title>
+    <title>Enhanced Load Test Report - $test_name</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .header { background: #f4f4f4; padding: 10px; border-radius: 5px; }
-        .metrics { display: flex; flex-wrap: wrap; gap: 20px; margin: 20px 0; }
-        .metric { background: #e9e9e9; padding: 15px; border-radius: 5px; min-width: 200px; }
-        .metric h3 { margin: 0; color: #333; }
-        .metric .value { font-size: 24px; font-weight: bold; color: #007acc; }
-        .success { color: #28a745; }
-        .error { color: #dc3545; }
-        pre { background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 0; 
+            background-color: #f5f7fa;
+        }
+        .header { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; 
+            padding: 30px; 
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .header h1 { margin: 0; font-size: 2.5em; font-weight: 300; }
+        .header h2 { margin: 10px 0 0 0; font-size: 1.2em; opacity: 0.9; }
+        .header .test-info { margin: 15px 0 0 0; font-size: 1em; opacity: 0.8; }
+        
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        
+        .metrics-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); 
+            gap: 20px; 
+            margin: 30px 0; 
+        }
+        .metric-card { 
+            background: white; 
+            padding: 25px; 
+            border-radius: 12px; 
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            border-left: 4px solid #667eea;
+        }
+        .metric-card h3 { margin: 0 0 15px 0; color: #4a5568; font-size: 0.9em; text-transform: uppercase; letter-spacing: 1px; }
+        .metric-card .value { font-size: 2.5em; font-weight: 700; margin: 10px 0; }
+        .metric-card .unit { font-size: 0.8em; color: #718096; margin-left: 5px; }
+        .success { color: #48bb78; }
+        .error { color: #f56565; }
+        .primary { color: #667eea; }
+        .warning { color: #ed8936; }
+        
+        .charts-section { margin: 40px 0; }
+        .chart-container { 
+            background: white; 
+            padding: 30px; 
+            border-radius: 12px; 
+            margin: 20px 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        .chart-container h3 { margin: 0 0 20px 0; color: #2d3748; }
+        .chart-wrapper { height: 400px; position: relative; }
+        
+        .details-section {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin: 20px 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        .details-section h3 { color: #2d3748; margin: 0 0 20px 0; }
+        .raw-output { 
+            background: #1a202c; 
+            color: #e2e8f0; 
+            padding: 20px; 
+            border-radius: 8px; 
+            overflow-x: auto; 
+            font-family: 'Courier New', monospace; 
+            font-size: 0.85em;
+            line-height: 1.4;
+        }
+        
+        .performance-indicators {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .indicator { 
+            background: #f7fafc; 
+            padding: 15px; 
+            border-radius: 8px; 
+            text-align: center;
+            border: 1px solid #e2e8f0;
+        }
+        .indicator h4 { margin: 0 0 10px 0; color: #4a5568; font-size: 0.8em; }
+        .indicator .indicator-value { font-weight: 600; font-size: 1.2em; }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>Load Test Report</h1>
-        <h2>Test: $test_name</h2>
-        <p>Generated on: $(date)</p>
+        <h2>$test_name</h2>
+        <div class="test-info">
+            Service: <strong>$service_info</strong> | 
+            Payload: <strong>$payload_size</strong> | 
+            Users: <strong>$user_count</strong> | 
+            Duration: <strong>${duration_sec}s</strong>
+        </div>
+        <div class="test-info">Generated on: $(date)</div>
     </div>
     
-    <div class="metrics">
-        <div class="metric">
-            <h3>Total Requests</h3>
-            <div class="value">$total_requests</div>
+    <div class="container">
+        <!-- Key Metrics -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <h3>Total Requests</h3>
+                <div class="value primary">$(printf "%'d" $total_requests)</div>
+            </div>
+            <div class="metric-card">
+                <h3>Successful Requests</h3>
+                <div class="value success">$(printf "%'d" $successful_requests)</div>
+            </div>
+            <div class="metric-card">
+                <h3>Failed Requests</h3>
+                <div class="value error">$(printf "%'d" $failed_requests)</div>
+            </div>
+            <div class="metric-card">
+                <h3>Throughput</h3>
+                <div class="value primary">$throughput_rps<span class="unit">req/s</span></div>
+            </div>
+            <div class="metric-card">
+                <h3>Average Latency</h3>
+                <div class="value warning">$avg_latency_ms<span class="unit">ms</span></div>
+            </div>
+            <div class="metric-card">
+                <h3>Error Rate</h3>
+                <div class="value $([ ${error_rate_percent%.*} -eq 0 ] && echo "success" || echo "error")">$error_rate_percent<span class="unit">%</span></div>
+            </div>
         </div>
-        <div class="metric">
-            <h3>Successful Requests</h3>
-            <div class="value success">$successful_requests</div>
+        
+        <!-- Performance Indicators -->
+        <div class="charts-section">
+            <div class="chart-container">
+                <h3>Performance Overview</h3>
+                <div class="performance-indicators">
+                    <div class="indicator">
+                        <h4>Min Latency</h4>
+                        <div class="indicator-value success">$min_latency ms</div>
+                    </div>
+                    <div class="indicator">
+                        <h4>Avg Latency</h4>
+                        <div class="indicator-value primary">$avg_latency_ms ms</div>
+                    </div>
+                    <div class="indicator">
+                        <h4>Max Latency</h4>
+                        <div class="indicator-value warning">$max_latency ms</div>
+                    </div>
+                    <div class="indicator">
+                        <h4>95th Percentile</h4>
+                        <div class="indicator-value">$p95_latency ms</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Request Distribution Chart -->
+            <div class="chart-container">
+                <h3>Request Status Distribution</h3>
+                <div class="chart-wrapper">
+                    <canvas id="statusChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Performance Metrics Chart -->
+            <div class="chart-container">
+                <h3>Performance Metrics</h3>
+                <div class="chart-wrapper">
+                    <canvas id="metricsChart"></canvas>
+                </div>
+            </div>
         </div>
-        <div class="metric">
-            <h3>Failed Requests</h3>
-            <div class="value error">$failed_requests</div>
+        
+        <!-- Raw Output -->
+        <div class="details-section">
+            <h3>Raw h2load Output</h3>
+            <div class="raw-output">$(cat "$h2load_file" | sed 's/</\&lt;/g' | sed 's/>/\&gt;/g')</div>
         </div>
-        <div class="metric">
-            <h3>Success Rate</h3>
-            <div class="value">$success_rate%</div>
-        </div>
-        <div class="metric">
-            <h3>Requests/sec</h3>
-            <div class="value">$req_per_sec</div>
-        </div>
-        <div class="metric">
-            <h3>Avg Response Time</h3>
-            <div class="value">${avg_time}ms</div>
-        </div>
-        <div class="metric">
-            <h3>Min Response Time</h3>
-            <div class="value">${min_time}ms</div>
-        </div>
-        <div class="metric">
-            <h3>Max Response Time</h3>
-            <div class="value">${max_time}ms</div>
+        
+        <!-- CSV Data -->
+        <div class="details-section">
+            <h3>CSV Results</h3>
+            <div class="raw-output">$(cat "$csv_file" | sed 's/</\&lt;/g' | sed 's/>/\&gt;/g')</div>
         </div>
     </div>
     
-    <h3>Raw h2load Output</h3>
-    <pre>$(cat "$h2load_file")</pre>
-    
-    <h3>CSV Data Sample (first 10 rows)</h3>
-    <pre>$(head -n 11 "$csv_file")</pre>
+    <script>
+        // Request Status Distribution Chart
+        const statusCtx = document.getElementById('statusChart').getContext('2d');
+        new Chart(statusCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Successful', 'Failed'],
+                datasets: [{
+                    data: [$successful_requests, $failed_requests],
+                    backgroundColor: ['#48bb78', '#f56565'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 20,
+                            font: { size: 14 }
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Performance Metrics Chart
+        const metricsCtx = document.getElementById('metricsChart').getContext('2d');
+        new Chart(metricsCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Min Latency', 'Avg Latency', 'Max Latency', '95th Percentile'],
+                datasets: [{
+                    label: 'Latency (ms)',
+                    data: [$min_latency, $avg_latency_ms, $max_latency, $p95_latency],
+                    backgroundColor: ['#48bb78', '#667eea', '#f56565', '#ed8936'],
+                    borderRadius: 6,
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Latency (ms)'
+                        }
+                    }
+                }
+            }
+        });
+    </script>
 </body>
 </html>
 EOF
@@ -774,105 +977,741 @@ EOF
     return 0
 }
 
-# Function to create summary report
-create_summary_report() {
-    log "Creating summary report..."
+# Function to generate enhanced dashboard report with comparison charts
+generate_enhanced_dashboard_report() {
+    log "Creating enhanced dashboard report with comparison charts..."
     
-    local summary_file="${REPORTS_DIR}/load_test_summary.html"
+    local dashboard_file="${REPORTS_DIR}/dashboard.html"
     
-    cat > "$summary_file" << 'EOF'
+    # Collect all CSV data for analysis by discovering existing files
+    local all_results=()
+    local services_tested=()
+    local file_sizes_tested=()
+    local users_tested=()
+    
+    # Discover all CSV files in results directory
+    for csv_file in "${RESULTS_DIR}"/*.csv; do
+        if [ -f "$csv_file" ]; then
+            local csv_data=$(tail -n 1 "$csv_file")
+            all_results+=("$csv_data")
+            
+            # Extract service, file_size, and users from filename
+            local filename=$(basename "$csv_file" .csv)
+            # Parse filename format: service_filesize_usersusers
+            # Service names can have dashes and possibly 'c' suffixes
+            if [[ $filename =~ ^(h[12]c?-h[12]c?)_([^_]+)_([0-9]+)users$ ]]; then
+                local service="${BASH_REMATCH[1]}"
+                local file_size="${BASH_REMATCH[2]}"
+                local users="${BASH_REMATCH[3]}"
+                
+                # Add to unique arrays
+                if [[ ! " ${services_tested[@]} " =~ " ${service} " ]]; then
+                    services_tested+=("$service")
+                fi
+                if [[ ! " ${file_sizes_tested[@]} " =~ " ${file_size} " ]]; then
+                    file_sizes_tested+=("$file_size")
+                fi
+                if [[ ! " ${users_tested[@]} " =~ " ${users} " ]]; then
+                    users_tested+=("$users")
+                fi
+            fi
+        fi
+    done
+    
+    # Generate comprehensive dashboard
+    cat > "$dashboard_file" << EOF
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Ballerina Passthrough Load Test Summary</title>
+    <title>Ballerina HTTP Load Testing Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .service-h1-h1 { background-color: #ffebee; }
-        .service-h1c-h1 { background-color: #e8f5e8; }
-        .service-h1-h1c { background-color: #e3f2fd; }
-        .service-h1c-h1c { background-color: #fff3e0; }
-        .header { background-color: #2196F3; color: white; padding: 20px; text-align: center; }
-        .metrics { display: flex; flex-wrap: wrap; gap: 20px; margin: 20px 0; }
-        .metric-card { background: #f5f5f5; padding: 15px; border-radius: 8px; flex: 1; min-width: 200px; }
-        .report-link { color: #2196F3; text-decoration: none; }
-        .report-link:hover { text-decoration: underline; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 0; 
+            background-color: #f8f9fa;
+        }
+        .header { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; 
+            padding: 40px; 
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .header h1 { margin: 0; font-size: 3em; font-weight: 300; }
+        .header p { margin: 15px 0 0 0; font-size: 1.1em; opacity: 0.9; }
+        
+        .container { max-width: 1600px; margin: 0 auto; padding: 30px; }
+        
+        .summary-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+            gap: 25px; 
+            margin: 40px 0; 
+        }
+        .summary-card { 
+            background: white; 
+            padding: 30px; 
+            border-radius: 15px; 
+            box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+            border-left: 5px solid #667eea;
+        }
+        .summary-card h3 { margin: 0 0 20px 0; color: #2d3748; font-size: 1.2em; }
+        .summary-card ul { margin: 0; padding: 0; list-style: none; }
+        .summary-card li { margin: 8px 0; padding: 8px 0; color: #4a5568; }
+        .summary-card .highlight { font-weight: 600; color: #667eea; }
+        
+        .charts-section { margin: 50px 0; }
+        .chart-row { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); 
+            gap: 30px; 
+            margin: 30px 0; 
+        }
+        .chart-container { 
+            background: white; 
+            padding: 30px; 
+            border-radius: 15px; 
+            box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+        }
+        .chart-container h3 { 
+            margin: 0 0 25px 0; 
+            color: #2d3748; 
+            font-size: 1.3em; 
+            text-align: center;
+        }
+        .chart-wrapper { height: 400px; position: relative; }
+        .chart-wrapper-large { height: 500px; position: relative; }
+        
+        .filter-section {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            margin: 20px 0;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+        }
+        .filter-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }
+        .filter-controls label {
+            color: #4a5568;
+            font-weight: 600;
+        }
+        .filter-controls select {
+            padding: 8px 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            background: white;
+            color: #2d3748;
+        }
+        
+        .protocol-comparison {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin: 30px 0;
+            text-align: center;
+        }
+        .protocol-comparison h3 { margin: 0 0 15px 0; }
+        
+        .results-table {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin: 30px 0;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+            overflow-x: auto;
+        }
+        .results-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .results-table th, .results-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .results-table th {
+            background-color: #f7fafc;
+            font-weight: 600;
+            color: #2d3748;
+        }
+        .results-table tr:hover {
+            background-color: #f7fafc;
+        }
+        .service-h1 { color: #38a169; }
+        .service-h2 { color: #3182ce; }
+        .performance-good { color: #38a169; font-weight: 600; }
+        .performance-average { color: #d69e2e; font-weight: 600; }
+        .performance-poor { color: #e53e3e; font-weight: 600; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Ballerina Passthrough Service Load Test Results</h1>
+        <div class="header">
+        <h1>🚀 Ballerina HTTP Load Testing Dashboard</h1>
+        <p>Performance Analysis - Service Configuration Results</p>
         <p>Generated on: $(date)</p>
     </div>
     
-    <div class="metrics">
-        <div class="metric-card">
-            <h3>Service Types Tested</h3>
-            <ul>
-                <li><strong>h1-h1:</strong> HTTPS → HTTPS</li>
-                <li><strong>h1c-h1:</strong> HTTP → HTTPS</li>
-                <li><strong>h1-h1c:</strong> HTTPS → HTTP</li>
-                <li><strong>h1c-h1c:</strong> HTTP → HTTP</li>
-            </ul>
+    <div class="container">
+        <!-- Test Summary -->
+        <div class="summary-grid">
+            <div class="summary-card">
+                <h3>📊 Test Overview</h3>
+                <ul>
+EOF
+
+    # Add dynamic content based on actual test results
+    echo "                    <li>Services Tested: <span class=\"highlight\">${#services_tested[@]}</span></li>" >> "$dashboard_file"
+    echo "                    <li>Payload Sizes: <span class=\"highlight\">${#file_sizes_tested[@]}</span> ($(IFS=', '; echo "${file_sizes_tested[*]}"))</li>" >> "$dashboard_file"
+    echo "                    <li>User Loads: <span class=\"highlight\">${#users_tested[@]}</span> ($(IFS=', '; echo "${users_tested[*]}"))</li>" >> "$dashboard_file"
+    echo "                    <li>Total Tests: <span class=\"highlight\">${#all_results[@]}</span></li>" >> "$dashboard_file"
+    echo "                    <li>Duration: <span class=\"highlight\">${TEST_DURATION}s each</span></li>" >> "$dashboard_file"
+
+    cat >> "$dashboard_file" << 'EOF'
+                </ul>
+            </div>
+            <div class="summary-card">
+                <h3>🔧 Service Configurations</h3>
+                <ul>
+                    <li>🟢 <strong>HTTP/1.1:</strong> h1-h1, h1c-h1, h1-h1c, h1c-h1c</li>
+                    <li>🔵 <strong>HTTP/2:</strong> h2-h2, h2c-h2, h2-h2c, h2c-h2c</li>
+                    <li>🔄 <strong>Mixed H1→H2:</strong> h1-h2, h1c-h2, h1-h2c, h1c-h2c</li>
+                    <li>🔄 <strong>Mixed H2→H1:</strong> h2-h1, h2c-h1, h2-h1c, h2c-h1c</li>
+                </ul>
+            </div>
+            <div class="summary-card">
+                <h3>📈 Performance Summary</h3>
+                <ul id="performance-summary">
+                    <!-- Will be populated by JavaScript -->
+                </ul>
+            </div>
         </div>
-        <div class="metric-card">
-            <h3>Test Parameters</h3>
-            <ul>
-                <li><strong>File Sizes:</strong> ${FILE_SIZES[*]}</li>
-                <li><strong>Concurrent Users:</strong> ${CONCURRENT_USERS[*]}</li>
-                <li><strong>Test Duration:</strong> ${TEST_DURATION}s</li>
-                <li><strong>Ramp-up Time:</strong> ${RAMP_UP_TIME}s</li>
-            </ul>
+        
+        <!-- Service Performance Analysis -->
+        <div class="service-analysis">
+            <h3>Service Performance Analysis</h3>
+            <p>Analyze performance across different service configurations, payload sizes, and concurrent user loads</p>
+        </div>
+        
+        <!-- Charts Section -->
+        <div class="charts-section charts-container">
+            <!-- Main Performance Charts -->
+            <div class="chart-row">
+                <div class="chart-container">
+                    <h3>📊 Throughput by Service & Payload</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="serviceChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <h3>⚡ Latency by Service & Payload</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="latencyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Performance Matrix for Detailed Analysis -->
+            <div class="chart-container">
+                <h3>🎯 Performance Matrix - Throughput vs Latency</h3>
+                <div class="chart-wrapper-large">
+                    <canvas id="matrixChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Detailed Results Table -->
+        <div class="results-table">
+            <h3>📋 Detailed Test Results</h3>
+            <table id="resultsTable">
+                <thead>
+                    <tr>
+                        <th>Service</th>
+                        <th>Payload</th>
+                        <th>Users</th>
+                        <th>Throughput (req/s)</th>
+                        <th>Avg Latency (ms)</th>
+                        <th>Error Rate (%)</th>
+                        <th>Total Requests</th>
+                        <th>Report</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsTableBody">
+                    <!-- Will be populated by JavaScript -->
+                </tbody>
+            </table>
         </div>
     </div>
     
-    <h2>Detailed Test Reports</h2>
-    <table>
-        <tr>
-            <th>Service Type</th>
-            <th>File Size</th>
-            <th>Concurrent Users</th>
-            <th>Detailed Report</th>
-        </tr>
+    <script>
+        // Test results data
+        const testResults = [
 EOF
 
-    # Add table rows for each test
-    for service in "${SELECTED_SERVICE_NAMES[@]}"; do
-        for file_size in "${FILE_SIZES[@]}"; do
-            for users in "${CONCURRENT_USERS[@]}"; do
-                local test_name="${service}_${file_size}_${users}users"
-                local report_dir="${REPORTS_DIR}/${test_name}"
-                
-                if [ -d "$report_dir" ]; then
-                    echo "        <tr class=\"service-$service\">" >> "$summary_file"
-                    echo "            <td>$service</td>" >> "$summary_file"
-                    echo "            <td>$file_size</td>" >> "$summary_file"
-                    echo "            <td>$users</td>" >> "$summary_file"
-                    echo "            <td><a href=\"${test_name}/index.html\" class=\"report-link\">View Report</a></td>" >> "$summary_file"
-                    echo "        </tr>" >> "$summary_file"
-                fi
-            done
-        done
+    # Add JavaScript data from CSV results
+    local first_result=true
+    for result in "${all_results[@]}"; do
+        if [ "$first_result" = false ]; then
+            echo "," >> "$dashboard_file"
+        fi
+        first_result=false
+        IFS=',' read -r test_type total_requests duration_sec throughput_rps avg_latency_ms error_rate_percent <<< "$result"
+        IFS='_' read -r service payload users_str <<< "$test_type"
+        users=$(echo "$users_str" | sed 's/users//')
+        
+        echo "            {" >> "$dashboard_file"
+        echo "                service: '$service'," >> "$dashboard_file"
+        echo "                payload: '$payload'," >> "$dashboard_file"
+        echo "                users: $users," >> "$dashboard_file"
+        echo "                throughput: $throughput_rps," >> "$dashboard_file"
+        echo "                latency: $avg_latency_ms," >> "$dashboard_file"
+        echo "                errorRate: $error_rate_percent," >> "$dashboard_file"
+        echo "                totalRequests: $total_requests," >> "$dashboard_file"
+        echo "                testName: '$test_type'" >> "$dashboard_file"
+        echo "            }" >> "$dashboard_file"
     done
-    
-    cat >> "$summary_file" << 'EOF'
-    </table>
-    
-    <h2>Notes</h2>
-    <ul>
-        <li>All tests were performed against a local netty echo backend service</li>
-        <li>SSL/TLS configurations use self-signed certificates from the resources directory</li>
-        <li>Response time assertions validate 200 HTTP status codes</li>
-        <li>Each test runs for 5 minutes with a 30-second ramp-up period</li>
-        <li>Services and backends are restarted between each test scenario for clean state</li>
-    </ul>
+
+    cat >> "$dashboard_file" << 'EOF'
+        ];
+        
+        // Process data for charts
+        const services = [...new Set(testResults.map(r => r.service))];
+        const payloads = [...new Set(testResults.map(r => r.payload))];
+        const userCounts = [...new Set(testResults.map(r => r.users))].sort((a,b) => a-b);
+        
+        // Color schemes
+        const serviceColors = {
+            'h1-h1': '#48bb78', 'h1c-h1': '#38a169', 'h1-h1c': '#2f855a', 'h1c-h1c': '#276749',
+            'h2-h2': '#4299e1', 'h2c-h2': '#3182ce', 'h2-h2c': '#2b77cb', 'h2c-h2c': '#2c5aa0',
+            'h1-h2': '#ed8936', 'h1c-h2': '#dd6b20', 'h1-h2c': '#c05621', 'h1c-h2c': '#9c4221',
+            'h2-h1': '#9f7aea', 'h2c-h1': '#805ad5', 'h2-h1c': '#6b46c1', 'h2c-h1c': '#553c9a'
+        };
+        
+        // Generate insights
+        function generateInsights() {
+            const insights = document.getElementById('performance-summary');
+            const avgThroughput = testResults.reduce((sum, r) => sum + r.throughput, 0) / testResults.length;
+            const bestService = testResults.reduce((best, r) => r.throughput > best.throughput ? r : best);
+            const totalRequests = testResults.reduce((sum, r) => sum + r.totalRequests, 0);
+            const avgLatency = testResults.reduce((sum, r) => sum + r.latency, 0) / testResults.length;
+            
+            insights.innerHTML = `
+                <li>Average Throughput: <span class="highlight">${Math.round(avgThroughput)} req/s</span></li>
+                <li>Best Performing Service: <span class="highlight">${bestService.service}</span> (${Math.round(bestService.throughput)} req/s)</li>
+                <li>Average Latency: <span class="highlight">${avgLatency.toFixed(2)} ms</span></li>
+                <li>Total Requests Processed: <span class="highlight">${totalRequests.toLocaleString()}</span></li>
+                <li>Services Tested: <span class="highlight">${services.length}</span></li>
+            `;
+        }
+        
+        // Interactive Throughput Chart (Grouped by Service with Payload breakdown)
+        function createServiceChart() {
+            const ctx = document.getElementById('serviceChart').getContext('2d');
+            
+            // Create datasets for each payload size
+            const datasets = payloads.map((payload, index) => {
+                const data = services.map(service => {
+                    const results = testResults.filter(r => r.service === service && r.payload === payload);
+                    return results.length > 0 ? results.reduce((sum, r) => sum + r.throughput, 0) / results.length : 0;
+                });
+                
+                const hue = index * (360 / payloads.length);
+                return {
+                    label: payload,
+                    data: data,
+                    backgroundColor: 'hsla(' + hue + ', 70%, 60%, 0.8)',
+                    borderColor: 'hsl(' + hue + ', 70%, 50%)',
+                    borderWidth: 2,
+                    borderRadius: 4
+                };
+            });
+            
+            window.serviceChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: services,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: { 
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 15
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + Math.round(context.parsed.y).toLocaleString() + ' req/s';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: 'Throughput (req/s)', font: { size: 14, weight: 'bold' } }
+                        },
+                        x: {
+                            title: { display: true, text: 'Service Configuration', font: { size: 14, weight: 'bold' } }
+                        }
+                    },
+                    animation: {
+                        duration: 1000,
+                        easing: 'easeInOutQuart'
+                    }
+                }
+            });
+        }
+        
+        // Interactive Latency Chart (Grouped by Service with Payload breakdown)  
+        function createLatencyChart() {
+            const ctx = document.getElementById('latencyChart').getContext('2d');
+            
+            // Create datasets for each payload size
+            const datasets = payloads.map((payload, index) => {
+                const data = services.map(service => {
+                    const results = testResults.filter(r => r.service === service && r.payload === payload);
+                    return results.length > 0 ? results.reduce((sum, r) => sum + r.latency, 0) / results.length : 0;
+                });
+                
+                const hue = index * (360 / payloads.length);
+                return {
+                    label: payload,
+                    data: data,
+                    backgroundColor: 'hsla(' + hue + ', 70%, 60%, 0.8)',
+                    borderColor: 'hsl(' + hue + ', 70%, 50%)',
+                    borderWidth: 2,
+                    borderRadius: 4
+                };
+            });
+            
+            window.latencyChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: services,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: { 
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 15
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y.toFixed(2) + ' ms';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: 'Average Latency (ms)', font: { size: 14, weight: 'bold' } }
+                        },
+                        x: {
+                            title: { display: true, text: 'Service Configuration', font: { size: 14, weight: 'bold' } }
+                        }
+                    },
+                    animation: {
+                        duration: 1000,
+                        easing: 'easeInOutQuart'
+                    }
+                }
+            });
+        }
+        
+        // Interactive Filtering Functions
+        function updateCharts() {
+            const selectedPayloads = Array.from(document.querySelectorAll('input[name="payload"]:checked')).map(cb => cb.value);
+            const selectedUsers = Array.from(document.querySelectorAll('input[name="users"]:checked')).map(cb => parseInt(cb.value));
+            
+            // Filter test results
+            let filteredResults = testResults;
+            if (selectedPayloads.length > 0) {
+                filteredResults = filteredResults.filter(r => selectedPayloads.includes(r.payload));
+            }
+            if (selectedUsers.length > 0) {
+                filteredResults = filteredResults.filter(r => selectedUsers.includes(r.users));
+            }
+            
+            // Update service chart
+            updateServiceChart(filteredResults, selectedPayloads.length > 0 ? selectedPayloads : payloads);
+            updateLatencyChart(filteredResults, selectedPayloads.length > 0 ? selectedPayloads : payloads);
+            updateResultsTable(filteredResults);
+        }
+        
+        function updateServiceChart(filteredResults, activePayloads) {
+            if (!window.serviceChart) return;
+            
+            const datasets = activePayloads.map((payload, index) => {
+                const data = services.map(service => {
+                    const results = filteredResults.filter(r => r.service === service && r.payload === payload);
+                    return results.length > 0 ? results.reduce((sum, r) => sum + r.throughput, 0) / results.length : 0;
+                });
+                
+                const hue = index * (360 / activePayloads.length);
+                return {
+                    label: payload,
+                    data: data,
+                    backgroundColor: 'hsla(' + hue + ', 70%, 60%, 0.8)',
+                    borderColor: 'hsl(' + hue + ', 70%, 50%)',
+                    borderWidth: 2,
+                    borderRadius: 4
+                };
+            });
+            
+            window.serviceChart.data.datasets = datasets;
+            window.serviceChart.update('active');
+        }
+        
+        function updateLatencyChart(filteredResults, activePayloads) {
+            if (!window.latencyChart) return;
+            
+            const datasets = activePayloads.map((payload, index) => {
+                const data = services.map(service => {
+                    const results = filteredResults.filter(r => r.service === service && r.payload === payload);
+                    return results.length > 0 ? results.reduce((sum, r) => sum + r.latency, 0) / results.length : 0;
+                });
+                
+                const hue = index * (360 / activePayloads.length);
+                return {
+                    label: payload,
+                    data: data,
+                    backgroundColor: 'hsla(' + hue + ', 70%, 60%, 0.8)',
+                    borderColor: 'hsl(' + hue + ', 70%, 50%)',
+                    borderWidth: 2,
+                    borderRadius: 4
+                };
+            });
+            
+            window.latencyChart.data.datasets = datasets;
+            window.latencyChart.update('active');
+        }
+        
+        function updateResultsTable(filteredResults) {
+            const tbody = document.getElementById('resultsTableBody');
+            tbody.innerHTML = filteredResults.map(result => {
+                const performanceClass = result.throughput > 15000 ? 'performance-good' : 
+                                       result.throughput > 10000 ? 'performance-average' : 'performance-poor';
+                const serviceClass = result.service.startsWith('h2') ? 'service-h2' : 'service-h1';
+                
+                return '<tr>' +
+                    '<td class="' + serviceClass + '">' + result.service + '</td>' +
+                    '<td>' + result.payload + '</td>' +
+                    '<td>' + result.users + '</td>' +
+                    '<td class="' + performanceClass + '">' + Math.round(result.throughput) + '</td>' +
+                    '<td>' + result.latency + '</td>' +
+                    '<td>' + result.errorRate + '</td>' +
+                    '<td>' + result.totalRequests.toLocaleString() + '</td>' +
+                    '<td><a href="' + result.testName + '/index.html" target="_blank">View Details</a></td>' +
+                '</tr>';
+            }).join('');
+        }
+        
+        // Create Interactive Filter Controls
+        function createFilterControls() {
+            const payloadFilters = payloads.map(payload => 
+                '<label style="display: block; margin-bottom: 8px; cursor: pointer;">' +
+                    '<input type="checkbox" name="payload" value="' + payload + '" checked style="margin-right: 8px;">' +
+                    '<span style="font-weight: 500;">' + payload + '</span>' +
+                '</label>'
+            ).join('');
+            
+            const userFilters = userCounts.map(users => 
+                '<label style="display: block; margin-bottom: 8px; cursor: pointer;">' +
+                    '<input type="checkbox" name="users" value="' + users + '" checked style="margin-right: 8px;">' +
+                    '<span style="font-weight: 500;">' + users + ' users</span>' +
+                '</label>'
+            ).join('');
+            
+            const filterHtml = '<div class="filter-controls" style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px;">' +
+                '<h3 style="margin-top: 0; color: #2d3748;">🔍 Interactive Filters</h3>' +
+                '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">' +
+                    '<div>' +
+                        '<h4 style="margin-bottom: 15px; color: #4a5568;">Payload Sizes</h4>' +
+                        payloadFilters +
+                    '</div>' +
+                    '<div>' +
+                        '<h4 style="margin-bottom: 15px; color: #4a5568;">Concurrent Users</h4>' +
+                        userFilters +
+                    '</div>' +
+                '</div>' +
+                '<div style="margin-top: 20px;">' +
+                    '<button onclick="selectAllFilters()" style="background: #667eea; color: white; border: none; padding: 8px 16px; border-radius: 4px; margin-right: 10px; cursor: pointer;">Select All</button>' +
+                    '<button onclick="clearAllFilters()" style="background: #e53e3e; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Clear All</button>' +
+                '</div>' +
+            '</div>';
+            
+            const chartsContainer = document.querySelector('.charts-container');
+            chartsContainer.insertAdjacentHTML('afterbegin', filterHtml);
+            
+            // Add event listeners
+            document.querySelectorAll('input[name="payload"], input[name="users"]').forEach(checkbox => {
+                checkbox.addEventListener('change', updateCharts);
+            });
+        }
+        
+        function selectAllFilters() {
+            document.querySelectorAll('input[name="payload"], input[name="users"]').forEach(cb => cb.checked = true);
+            updateCharts();
+        }
+        
+        function clearAllFilters() {
+            document.querySelectorAll('input[name="payload"], input[name="users"]').forEach(cb => cb.checked = false);
+            updateCharts();
+        }
+        
+        // Performance Matrix Chart
+        function createMatrixChart() {
+            const ctx = document.getElementById('matrixChart').getContext('2d');
+            
+            new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: services.map(service => ({
+                        label: service,
+                        data: testResults.filter(r => r.service === service).map(r => ({
+                            x: r.throughput,
+                            y: r.latency,
+                            payload: r.payload,
+                            users: r.users
+                        })),
+                        backgroundColor: serviceColors[service] || '#667eea',
+                        pointRadius: 8,
+                        pointHoverRadius: 12
+                    }))
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { 
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + Math.round(context.parsed.x) + ' req/s, ' + context.parsed.y + 'ms (' + context.raw.payload + ', ' + context.raw.users + ' users)';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: 'Throughput (req/s)' }
+                        },
+                        y: {
+                            title: { display: true, text: 'Average Latency (ms)' }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Populate results table
+        function populateResultsTable() {
+            const tbody = document.getElementById('resultsTableBody');
+            tbody.innerHTML = testResults.map(result => {
+                const performanceClass = result.throughput > 15000 ? 'performance-good' : 
+                                       result.throughput > 10000 ? 'performance-average' : 'performance-poor';
+                const serviceClass = result.service.startsWith('h2') ? 'service-h2' : 'service-h1';
+                
+                return '<tr>' +
+                    '<td class="' + serviceClass + '">' + result.service + '</td>' +
+                    '<td>' + result.payload + '</td>' +
+                    '<td>' + result.users + '</td>' +
+                    '<td class="' + performanceClass + '">' + Math.round(result.throughput) + '</td>' +
+                    '<td>' + result.latency + '</td>' +
+                    '<td>' + result.errorRate + '</td>' +
+                    '<td>' + result.totalRequests.toLocaleString() + '</td>' +
+                    '<td><a href="' + result.testName + '/index.html" target="_blank">View Details</a></td>' +
+                '</tr>';
+            }).join('');
+        }
+        
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Dashboard loading...', testResults.length, 'test results found');
+            console.log('Services:', services);
+            console.log('Payloads:', payloads);
+            console.log('User counts:', userCounts);
+            
+            try {
+                generateInsights();
+                console.log('Insights generated');
+            } catch (e) {
+                console.error('Error generating insights:', e);
+            }
+            
+            try {
+                createFilterControls();
+                console.log('Filter controls created');
+            } catch (e) {
+                console.error('Error creating filter controls:', e);
+            }
+            
+            try {
+                createServiceChart();
+                console.log('Service chart created');
+            } catch (e) {
+                console.error('Error creating service chart:', e);
+            }
+            
+            try {
+                createLatencyChart();
+                console.log('Latency chart created');
+            } catch (e) {
+                console.error('Error creating latency chart:', e);
+            }
+            
+            try {
+                createMatrixChart();
+                console.log('Matrix chart created');
+            } catch (e) {
+                console.error('Error creating matrix chart:', e);
+            }
+            
+            try {
+                populateResultsTable();
+                console.log('Results table populated');
+            } catch (e) {
+                console.error('Error populating results table:', e);
+            }
+        });
+    </script>
 </body>
 </html>
 EOF
     
-    log "Summary report created: $summary_file"
+    log "Enhanced dashboard report created: $dashboard_file"
 }
 
 # Function to cleanup
@@ -941,12 +1780,12 @@ main() {
     
     # Generate reports
     generate_reports
-    create_summary_report
+    generate_enhanced_dashboard_report
     
     log "Load testing completed successfully!"
     log "Results available in: $RESULTS_DIR"
     log "HTML reports available in: $REPORTS_DIR"
-    log "Summary report: $REPORTS_DIR/load_test_summary.html"
+    log "📊 Enhanced Dashboard: $REPORTS_DIR/dashboard.html"
 }
 
 # Function to display help
@@ -1082,7 +1921,6 @@ case "${1:-test}" in
         ;;
     "reports")
         generate_reports
-        create_summary_report
         ;;
     "cleanup")
         cleanup
