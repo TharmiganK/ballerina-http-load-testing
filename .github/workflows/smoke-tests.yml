@@ -43,12 +43,7 @@ jobs:
         path: ~/.ballerina
         key: ${{ runner.os }}-ballerina-${{ hashFiles('**/Ballerina.toml') }}
         restore-keys: ${{ runner.os }}-ballerina
-    
-    - name: Validate environment
-      run: |
-        chmod +x scripts/validate_setup.sh
-        scripts/validate_setup.sh
-    
+
     - name: Build projects
       run: |
         # Build Netty backend
@@ -64,7 +59,12 @@ jobs:
         # Generate samples
         chmod +x scripts/generate_samples.sh
         scripts/generate_samples.sh
-    
+
+    - name: Validate environment
+      run: |
+        chmod +x scripts/validate_setup.sh
+        scripts/validate_setup.sh
+
     - name: Run quick smoke test
       run: |
         chmod +x scripts/quick_test.sh
@@ -90,15 +90,30 @@ jobs:
         # Check if results were generated
         if [ -f quick_results/quick_test_h1c-h1c_1KB_5users.csv ]; then
           echo "✅ Test results generated successfully"
-          samples=$(tail -n +2 quick_results/quick_test_h1c-h1c_1KB_5users.csv | wc -l)
-          echo "📊 Total samples: $samples"
           
-          if [ "$samples" -gt 0 ]; then
-            # Calculate basic statistics from h2load CSV output
-            avg_time=$(tail -n +2 quick_results/quick_test_h1c-h1c_1KB_5users.csv | awk -F',' '{sum+=$2} END {if(NR>0) printf "%.2f", sum/NR; else print "0"}')
-            echo "✅ Average response time: ${avg_time}ms"
+          # Parse the simplified CSV format (test_type,total_requests,duration_sec,throughput_rps,avg_latency_ms,error_rate_percent)
+          if [ $(wc -l < quick_results/quick_test_h1c-h1c_1KB_5users.csv) -ge 2 ]; then
+            # Extract values from CSV (skip header line)
+            result_line=$(tail -n 1 quick_results/quick_test_h1c-h1c_1KB_5users.csv)
+            total_requests=$(echo "$result_line" | cut -d',' -f2)
+            throughput=$(echo "$result_line" | cut -d',' -f4)
+            avg_latency=$(echo "$result_line" | cut -d',' -f5)
+            error_rate=$(echo "$result_line" | cut -d',' -f6)
+            
+            echo "📊 Total requests: $total_requests"
+            echo "🚀 Throughput: $throughput req/s"
+            echo "⏱️  Average latency: ${avg_latency}ms"
+            echo "❌ Error rate: ${error_rate}%"
+            
+            # Check if test was successful (has requests and low error rate)
+            if [ "$total_requests" -gt 0 ] && [ "$(awk "BEGIN {print ($error_rate < 5.0)}")" = "1" ]; then
+              echo "✅ Smoke test passed successfully!"
+            else
+              echo "❌ Smoke test failed - insufficient requests or high error rate"
+              exit 1
+            fi
           else
-            echo "❌ No samples recorded"
+            echo "❌ No test data recorded in CSV"
             exit 1
           fi
         else
