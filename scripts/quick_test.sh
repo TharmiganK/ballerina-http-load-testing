@@ -151,7 +151,7 @@ BACKEND_PID=$!
 echo "Backend started with PID: $BACKEND_PID"
 
 # Wait for backend to start
-sleep 5
+sleep 20
 
 # Check if backend is running
 if ! lsof -Pi :$BACKEND_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
@@ -176,7 +176,7 @@ SERVICE_PID=$!
 echo "Service started with PID: $SERVICE_PID"
 
 # Wait for service to start
-sleep 10
+sleep 20
 
 # Check if service is running
 if ! lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null 2>&1; then

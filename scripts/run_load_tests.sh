@@ -94,9 +94,9 @@ TEST_DURATION=300  # 5 minutes per test
 RAMP_UP_TIME=30    # 30 seconds ramp up
 
 # Restart timing configuration
-BACKEND_RESTART_WAIT=5    # seconds to wait after restarting backends
-SERVICE_RESTART_WAIT=10   # seconds to wait after restarting service
-PRE_TEST_WAIT=3           # seconds to wait before starting test
+BACKEND_RESTART_WAIT=20    # seconds to wait after restarting backends
+SERVICE_RESTART_WAIT=20   # seconds to wait after restarting service
+PRE_TEST_WAIT=10           # seconds to wait before starting test
 
 # Colors for output
 RED='\033[0;31m'
