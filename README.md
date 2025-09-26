@@ -173,8 +173,6 @@ The framework enables comprehensive HTTP/2 performance analysis:
 - **Header Compression**: HPACK reduces overhead for repeated headers
 - **Binary Protocol**: More efficient parsing than HTTP/1.1 text format
 
-📖 **Detailed HTTP/2 Documentation**: See [HTTP2_EXTENSION.md](HTTP2_EXTENSION.md) for complete configuration matrix, usage patterns, and performance tuning guidance.
-
 ## Usage
 
 ### Full Load Testing
