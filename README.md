@@ -4,8 +4,8 @@
 
 A comprehensive load testing framework for Ballerina HTTP passthrough services with configurable SSL and **HTTP/2** support.
 
-> **📋 Migration Note**: This framework has been updated to use **h2load** instead of JMeter for better performance, easier installation, and faster CI/CD execution.
-> **🚀 NEW**: HTTP/2 support added! The framework now supports **16 service configurations** including pure HTTP/2, mixed HTTP/1.1↔HTTP/2 scenarios, and comprehensive protocol comparisons.
+> - **📋 Migration Note**: This framework has been updated to use **h2load** instead of JMeter for better performance, easier installation, and faster CI/CD execution.
+> - **🚀 NEW**: HTTP/2 support added! The framework now supports **16 service configurations** including pure HTTP/2, mixed HTTP/1.1↔HTTP/2 scenarios, and comprehensive protocol comparisons.
 
 ## Features
 
