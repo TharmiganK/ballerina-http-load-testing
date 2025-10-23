@@ -11,6 +11,7 @@ configurable boolean clientHttp2 = false;
 configurable boolean serverHttp2 = false;
 configurable int serverPort = 9091;
 configurable int backendPort = 8688;
+configurable string backendHost = "localhost";
 
 listener http:Listener securedEP = new (serverPort,
     httpVersion = serverHttp2 ? http:HTTP_2_0 : http:HTTP_1_1,
@@ -22,7 +23,7 @@ listener http:Listener securedEP = new (serverPort,
         } : ()
 );
 
-final http:Client nettyEP = check new (clientSsl ? "https://localhost:" + backendPort.toString() : "http://localhost:" + backendPort.toString(),
+final http:Client nettyEP = check new (clientSsl ? "https://" + backendHost + ":" + backendPort.toString() : "http://" + backendHost + ":" + backendPort.toString(),
     httpVersion = clientHttp2 ? http:HTTP_2_0 : http:HTTP_1_1,
     secureSocket = clientSsl ? {
             cert: {

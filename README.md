@@ -18,6 +18,53 @@ A comprehensive load testing framework for Ballerina HTTP passthrough services w
 - ✅ **h2load Integration**: Modern HTTP/2 benchmarking with terminal output visibility
 - ✅ **Automated Workflows**: GitHub Actions integration with configurable versions
 - ✅ **Comprehensive Reporting**: Simplified CSV reports and detailed logs
+- 🆕 **Docker-Based CPU Isolation**: Containerized testing with dedicated CPU core allocation
+- 🆕 **Statistical Analysis**: Multi-run testing with coefficient of variation consistency metrics
+- 🆕 **Resource Monitoring**: Real-time CPU and memory usage tracking during tests
+
+## 🐳 Docker-Based Load Testing (Recommended)
+
+For consistent, repeatable results with minimal CPU contention, use the new Docker-based testing approach:
+
+### Key Benefits
+
+- **🧮 CPU Isolation**: Dedicated CPU cores prevent resource contention
+- **📊 Statistical Confidence**: Multiple runs with CV < 3% target consistency  
+- **⏱️ Enhanced Warmup**: 5-minute warmup ensures stable baseline
+- **🔍 Resource Monitoring**: Real-time CPU/memory tracking
+- **📈 Comprehensive Analysis**: Automated statistical reporting
+
+### Quick Start with Docker
+
+```bash
+# Interactive demonstration
+./scripts/docker_demo.sh
+
+# Check system requirements  
+./scripts/cpu_monitor.sh check
+
+# Build Docker images with resource constraints
+./scripts/docker_load_test.sh build
+
+# Run statistical load tests (5 iterations, CV analysis)
+./scripts/docker_load_test.sh test
+
+# Analyze results with comprehensive statistics
+./scripts/statistical_analysis.sh all
+```
+
+### Resource Allocation Strategy
+
+| Component | CPU Cores | Memory Limit | Purpose |
+|-----------|-----------|--------------|---------|
+| Passthrough Service | 0-1 | 2GB | Ballerina HTTP service |
+| Backend Service | 2-3 | 2GB | Netty echo backend |
+| h2load Client | 4-7 | 2GB | Load generator |
+
+**Minimum Requirements**: 4 CPU cores, 8GB RAM  
+**Recommended**: 8+ CPU cores, 16GB RAM
+
+For detailed Docker setup guide, see: [`docker/README.md`](docker/README.md)
 
 ## Project Structure
 
@@ -105,49 +152,58 @@ The unified Ballerina service now supports **16 different configurations** combi
 
 ## Quick Start
 
-1. **Clone the repository**:
+Choose your preferred testing approach:
 
-   ```bash
-   git clone https://github.com/TharmiganK/ballerina-http-load-testing.git
-   cd ballerina-http-load-testing
-   ```
+### 🐳 Docker-Based Testing (Recommended for Consistency)
 
-2. **Validate environment**:
+```bash
+git clone https://github.com/TharmiganK/ballerina-http-load-testing.git
+cd ballerina-http-load-testing
 
-   ```bash
-   ./scripts/validate_setup.sh
-   ```
+# Interactive demo with CPU isolation
+./scripts/docker_demo.sh
 
-3. **Try the HTTP/2 demo** (interactive):
+# Or run tests directly
+./scripts/docker_load_test.sh build
+./scripts/docker_load_test.sh test
+```
 
-   ```bash
-   ./scripts/http2_demo.sh
-   ```
+### 🔧 Traditional Testing (Direct Host Execution)
 
-4. **Run full load tests** (all 16 configurations):
+```bash
+git clone https://github.com/TharmiganK/ballerina-http-load-testing.git
+cd ballerina-http-load-testing
 
-   ```bash
-   ./scripts/run_load_tests.sh
-   ```
+# Validate environment
+./scripts/validate_setup.sh
 
-5. **Test specific configurations**:
+# Try the HTTP/2 demo (interactive)
+./scripts/http2_demo.sh
 
-   ```bash
-   # Test pure HTTP/2 with SSL
-   ./scripts/quick_test.sh h2-h2 1KB 10 5
-   
-   # Test mixed HTTP/1.1 → HTTP/2 scenario
-   ./scripts/quick_test.sh h1-h2c 10KB 50 30
-   
-   # Compare HTTP/1.1 vs HTTP/2 performance
-   ./scripts/quick_test.sh h1c-h1c 1KB 100 60  # Baseline HTTP/1.1
-   ./scripts/quick_test.sh h2c-h2c 1KB 100 60  # HTTP/2 equivalent
-   
-   # Test with new 50B payload for minimal overhead testing
-   ./scripts/quick_test.sh h2-h2 50B 25 15
-   ```
+# Run full load tests (all 16 configurations)
+./scripts/run_load_tests.sh
+```
 
-6. **Use advanced load testing options**:
+### Additional Testing Options
+
+**Test specific configurations**:
+
+```bash
+# Test pure HTTP/2 with SSL
+./scripts/quick_test.sh h2-h2 1KB 10 5
+
+# Test mixed HTTP/1.1 → HTTP/2 scenario
+./scripts/quick_test.sh h1-h2c 10KB 50 30
+
+# Compare HTTP/1.1 vs HTTP/2 performance
+./scripts/quick_test.sh h1c-h1c 1KB 100 60  # Baseline HTTP/1.1
+./scripts/quick_test.sh h2c-h2c 1KB 100 60  # HTTP/2 equivalent
+
+# Test with new 50B payload for minimal overhead testing
+./scripts/quick_test.sh h2-h2 50B 25 15
+```
+
+**Use advanced load testing options**:
 
    ```bash
    # Test specific services with custom parameters

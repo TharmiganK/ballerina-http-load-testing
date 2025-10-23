@@ -1,0 +1,106 @@
+services:
+  # Ballerina Passthrough Service (CPU cores 0-1)
+  passthrough:
+    build:
+      context: ..
+      dockerfile: docker/passthrough/Dockerfile
+    container_name: ballerina-passthrough
+    networks:
+      - loadtest-network
+    ports:
+      - "9091-9106:9091-9106"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "1.5"
+          memory: 1G
+    environment:
+      - SERVICE_NAME=passthrough
+      - JAVA_OPTS=-Xmx1g -Xms512m
+      - EP_KEY_PATH=./resources/ballerinaKeystore.p12
+      - EP_TRUST_STORE_PATH=./resources/ballerinaTruststore.p12
+      - CLIENT_SSL=${CLIENT_SSL:-false}
+      - SERVER_SSL=${SERVER_SSL:-false}
+      - CLIENT_HTTP2=${CLIENT_HTTP2:-false}
+      - SERVER_HTTP2=${SERVER_HTTP2:-false}
+      - SERVER_PORT=${SERVER_PORT:-9094}
+      - BACKEND_PORT=${BACKEND_PORT:-8701}
+      - BACKEND_HOST=netty-backend
+    volumes:
+      - ./results:/app/results
+      - ./resources:/app/resources
+    restart: unless-stopped
+
+  # Netty Backend Service (CPU cores 2-3)
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/backend/Dockerfile
+    container_name: netty-backend
+    networks:
+      - loadtest-network
+    ports:
+      - "8688-8709:8688-8709"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "1.5"
+          memory: 1G
+    environment:
+      - SERVICE_NAME=backend
+      - JAVA_OPTS=-Xmx1g -Xms512m
+      - BACKEND_PORT=${BACKEND_PORT:-8701}
+      - SSL_ENABLED=${BACKEND_SSL:-false}
+      - HTTP2_ENABLED=${BACKEND_HTTP2:-false}
+      - SLEEP_TIME=${SLEEP_TIME:-0}
+    volumes:
+      - ./results:/app/results
+      - ./resources:/app/resources
+    restart: unless-stopped
+
+  # h2load Load Generator (CPU cores 4-7)
+  h2load:
+    build:
+      context: ..
+      dockerfile: docker/h2load/Dockerfile
+    container_name: h2load-client
+    networks:
+      - loadtest-network
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 2G
+        reservations:
+          cpus: "3.0"
+          memory: 1G
+    environment:
+      - LOAD_GENERATOR=true
+    volumes:
+      - ./results:/app/results
+      - ./samples:/app/samples
+      - ./scripts:/app/scripts
+    depends_on:
+      - passthrough
+      - backend
+    profiles:
+      - loadtest
+    command: tail -f /dev/null
+
+networks:
+  loadtest-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+# Named volumes for persistent data
+volumes:
+  results-data:
+  logs-data:

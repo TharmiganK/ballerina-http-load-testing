@@ -70,3 +70,4 @@ replay_pid*.log
 # Test specific temporary files
 test_output/
 *.jtl.tmp
+docker-results/*
