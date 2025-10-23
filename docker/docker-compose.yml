@@ -31,7 +31,7 @@ services:
       - BACKEND_HOST=netty-backend
     volumes:
       - ./results:/app/results
-      - ./resources:/app/resources
+      - ../resources:/app/resources
     restart: unless-stopped
 
   # Netty Backend Service (CPU cores 2-3)
@@ -61,7 +61,7 @@ services:
       - SLEEP_TIME=${SLEEP_TIME:-0}
     volumes:
       - ./results:/app/results
-      - ./resources:/app/resources
+      - ../resources:/app/resources
     restart: unless-stopped
 
   # h2load Load Generator (CPU cores 4-7)
@@ -84,8 +84,8 @@ services:
       - LOAD_GENERATOR=true
     volumes:
       - ./results:/app/results
-      - ./samples:/app/samples
-      - ./scripts:/app/scripts
+      - ../samples:/app/samples
+      - ../scripts:/app/scripts
     depends_on:
       - passthrough
       - backend
