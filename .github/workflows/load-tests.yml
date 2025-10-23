@@ -42,6 +42,11 @@ on:
         required: false
         default: "300"
         type: number
+      warmup_duration:
+        description: "Warmup duration in seconds"
+        required: false
+        default: "0"
+        type: number
       java_version:
         description: "Java version to use"
         required: false
@@ -210,17 +215,19 @@ jobs:
       - name: Run load test for ${{ matrix.service }}-${{ matrix.payload }}-${{ matrix.users }}users
         run: |
           TEST_DURATION="${{ github.event.inputs.test_duration || '180' }}"
+          WARMUP_DURATION="${{ github.event.inputs.warmup_duration || '0' }}"
 
           # Export test parameters
           export SERVICE="${{ matrix.service }}"
           export PAYLOAD_SIZE="${{ matrix.payload }}"
           export USERS="${{ matrix.users }}"
           export DURATION="$TEST_DURATION"
+          export WARMUP="$WARMUP_DURATION"
 
-          echo "Running load test for service: $SERVICE, payload: $PAYLOAD_SIZE, users: $USERS, duration: ${DURATION}s"
+          echo "Running load test for service: $SERVICE, payload: $PAYLOAD_SIZE, users: $USERS, duration: ${DURATION}s, warmup: ${WARMUP}s"
 
           # Run the quick test script
-          scripts/quick_test.sh "$SERVICE" "$PAYLOAD_SIZE" "$USERS" "$DURATION"
+          scripts/quick_test.sh "$SERVICE" "$PAYLOAD_SIZE" "$USERS" "$DURATION" "$WARMUP"
         timeout-minutes: 15
 
       - name: Upload test results

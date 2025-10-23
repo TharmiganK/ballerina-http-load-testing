@@ -9,7 +9,7 @@
 "
   },
   "test_info": {
-    "file_size": "50B.txt",
+    "file_size": "100B.txt",
     "generated_by": "load_testing_framework"
   }
 }

@@ -71,7 +71,7 @@ jobs:
 
           # Run a very short test to validate everything works
           # Test h1c-h1c (HTTP/1.1 clear text - simplest config) with small payload and few users
-          timeout 300 scripts/quick_test.sh h1c-h1c 1KB 5 60 || {
+          timeout 300 scripts/quick_test.sh h1c-h1c 1KB 5 60 5 || {
             echo "HTTP/1.1 smoke test failed or timed out"
             
             # Show logs for debugging
@@ -100,7 +100,7 @@ jobs:
           sleep 2
 
           # Test h2c-h2c (HTTP/2 clear text) with small payload and few users
-          timeout 300 scripts/quick_test.sh h2c-h2c 1KB 5 60 || {
+          timeout 300 scripts/quick_test.sh h2c-h2c 1KB 5 60 5 || {
             echo "HTTP/2 smoke test failed or timed out"
             
             # Show logs for debugging

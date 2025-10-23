@@ -35,13 +35,14 @@ show_help() {
 Ballerina HTTP Load Testing - Quick Test Script
 
 USAGE:
-    ./quick_test.sh [OPTIONS] <service> <file_size> <users> <duration>
+    ./quick_test.sh [OPTIONS] <service> <file_size> <users> <duration> [warmup]
 
 ARGUMENTS:
     <service>       Service configuration name (see SERVICE CONFIGURATIONS below)
     <file_size>     Payload size (e.g., 1KB, 5KB, 10KB, 100KB, 500KB, 1MB)
     <users>         Number of concurrent users/connections
     <duration>      Test duration in seconds
+    <warmup>        Warmup duration in seconds (optional, default: 0)
 
 OPTIONS:
     -h, --help      Show this help message and exit
@@ -53,8 +54,11 @@ EXAMPLES:
     # HTTP/2 with SSL test
     ./quick_test.sh h2-h2 10KB 50 60
 
-    # Mixed protocol scenario
-    ./quick_test.sh h1-h2c 5KB 25 45
+    # Mixed protocol scenario with 10 second warmup
+    ./quick_test.sh h1-h2c 5KB 25 45 10
+
+    # Test with warmup period
+    ./quick_test.sh h2-h2 1KB 100 60 15
 
 SERVICE CONFIGURATIONS:
     The framework supports 16 service configurations combining HTTP/1.1, HTTP/2, SSL, and clear text:
@@ -239,6 +243,7 @@ SERVICE=${1:-"h1c-h1c"}
 FILE_SIZE=${2:-"1KB"}
 USERS=${3:-"100"}
 DURATION=${4:-"60"}
+WARMUP=${5:-"0"}
 
 PORT=$(get_service_port "$SERVICE")
 PROTOCOL=$(get_service_protocol "$SERVICE")
@@ -266,7 +271,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Quick testing: $SERVICE ($PROTOCOL://localhost:$PORT)"
-echo "Parameters: File=$FILE_SIZE, Users=$USERS, Duration=${DURATION}s"
+echo "Parameters: File=$FILE_SIZE, Users=$USERS, Duration=${DURATION}s, Warmup=${WARMUP}s"
 echo "Service: Client HTTP$([ "$CLIENT_HTTP2" = "true" ] && echo "2" || echo "1.1")/SSL=$CLIENT_SSL -> Server HTTP$([ "$SERVER_HTTP2" = "true" ] && echo "2" || echo "1.1")/SSL=$SERVER_SSL"
 echo "Backend: HTTP$([ "$BACKEND_HTTP2" = "true" ] && echo "2" || echo "1.1")/SSL=$BACKEND_SSL on port $BACKEND_PORT"
 
@@ -298,9 +303,9 @@ mkdir -p "$RESULTS_DIR"
 echo "Starting netty backend..."
 cd "$NETTY_BACKEND_DIR"
 if [ "$BACKEND_SSL" = "true" ]; then
-    nohup java -jar "$NETTY_JAR" --port $BACKEND_PORT --ssl true --http2 $BACKEND_HTTP2 --key-store-file "${PROJECT_ROOT}/resources/ballerinaKeystore.p12" --key-store-password ballerina > "$RESULTS_DIR/netty_backend.log" 2>&1 &
+    nohup java -Xmx2G -jar "$NETTY_JAR" --port $BACKEND_PORT --ssl true --http2 $BACKEND_HTTP2 --key-store-file "${PROJECT_ROOT}/resources/ballerinaKeystore.p12" --key-store-password ballerina > "$RESULTS_DIR/netty_backend.log" 2>&1 &
 else
-    nohup java -jar "$NETTY_JAR" --port $BACKEND_PORT --ssl false --http2 $BACKEND_HTTP2 > "$RESULTS_DIR/netty_backend.log" 2>&1 &
+    nohup java -Xmx2G -jar "$NETTY_JAR" --port $BACKEND_PORT --ssl false --http2 $BACKEND_HTTP2 > "$RESULTS_DIR/netty_backend.log" 2>&1 &
 fi
 BACKEND_PID=$!
 echo "Backend started with PID: $BACKEND_PID"
@@ -373,7 +378,7 @@ TEST_URL="${BASE_URL}/passthrough"
 # Run h2load test with appropriate options
 echo "Running h2load test..."
 echo "URL: $TEST_URL"
-echo "Clients: $USERS, Duration: ${DURATION}s"
+echo "Clients: $USERS, Duration: ${DURATION}s, Warmup: ${WARMUP}s"
 
 # h2load command with output redirection
 h2load_output="${RESULTS_DIR}/h2load_raw_${SERVICE}_${FILE_SIZE}_${USERS}users.txt"
@@ -396,15 +401,21 @@ else
     fi
 fi
 
+# Prepare warmup option for h2load
+WARMUP_OPTION=""
+if [ "$WARMUP" -gt 0 ]; then
+    WARMUP_OPTION="--warm-up-time=${WARMUP}s"
+fi
+
 # Run h2load with the data file as POST body (show output in terminal and save to file)
 if [ "$PROTOCOL" = "https" ]; then
     # For HTTPS
     h2load -c "$USERS" -t 1 -D "$DURATION" -d "$DATA_FILE" \
-        $H2LOAD_HTTP_VERSION "$TEST_URL" 2>&1 | tee "$h2load_output"
+        $WARMUP_OPTION $H2LOAD_HTTP_VERSION "$TEST_URL" 2>&1 | tee "$h2load_output"
 else
     # For HTTP
     h2load -c "$USERS" -t 1 -D "$DURATION" -d "$DATA_FILE" \
-        $H2LOAD_HTTP_VERSION "$TEST_URL" 2>&1 | tee "$h2load_output"
+        $WARMUP_OPTION $H2LOAD_HTTP_VERSION "$TEST_URL" 2>&1 | tee "$h2load_output"
 fi
 
 # Parse h2load output to create simplified CSV report

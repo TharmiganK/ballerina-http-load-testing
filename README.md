@@ -198,6 +198,7 @@ Test Options (for 'test' command):
   -u, --users USERS                  Comma-separated user counts (e.g., "50,100,500")
   -s, --services SERVICES            Comma-separated service names (e.g., "h1-h1,h2-h2")
   -d, --duration SECONDS             Test duration in seconds (default: 300)
+  -w, --warmup SECONDS               Warmup duration in seconds (default: 0)
   -h, --help                         Show help message
 
 Available Services:
@@ -229,11 +230,14 @@ Default Parameters:
 # Quick HTTP/2 comparison test
 ./scripts/run_load_tests.sh --services "h1c-h1c,h2c-h2c" --files "1KB" --users "100" --duration 120
 
+# Test with warmup period (recommended for production testing)
+./scripts/run_load_tests.sh test --warmup 30
+
 # Test mixed protocol scenarios
 ./scripts/run_load_tests.sh test -s "h1-h2,h2-h1" -f "10KB,100KB" -u "50,100"
 
-# Use short options for concise commands
-./scripts/run_load_tests.sh -s "h2-h2" -f "50B,1KB" -u "25,50" -d 60
+# Use short options for concise commands with warmup
+./scripts/run_load_tests.sh -s "h2-h2" -f "50B,1KB" -u "25,50" -d 60 -w 15
 ```
 
 ### Individual Service Testing
@@ -241,13 +245,14 @@ Default Parameters:
 Test a specific service configuration:
 
 ```bash
-./scripts/quick_test.sh <service> <file> <users> <duration>
+./scripts/quick_test.sh <service> <file> <users> <duration> [warmup]
 
 Parameters:
   service: Any of the 16 available services (h1-h1, h1c-h1, h1-h1c, h1c-h1c, h2-h2, etc.)
   file:    Any available payload file (50B, 1KB, 5KB, 10KB, 100KB, 500KB, 1MB)
   users:   Number of concurrent users
   duration: Test duration in seconds
+  warmup:  Warmup period in seconds (optional, default: 0)
 ```
 
 Examples:
@@ -256,12 +261,15 @@ Examples:
 # Test HTTP/2 with minimal payload
 ./scripts/quick_test.sh h2-h2 50B 25 30
 
+# Test with warmup period (recommended for production-like testing)
+./scripts/quick_test.sh h2-h2 50B 25 30 15
+
 # Compare HTTP/1.1 vs HTTP/2 with same parameters  
 ./scripts/quick_test.sh h1c-h1c 1KB 100 60
 ./scripts/quick_test.sh h2c-h2c 1KB 100 60
 
-# Test mixed protocol scenario
-./scripts/quick_test.sh h1-h2 10KB 50 120
+# Test mixed protocol scenario with warmup
+./scripts/quick_test.sh h1-h2 10KB 50 120 20
 ```
 
 ### Environment Validation

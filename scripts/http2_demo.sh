@@ -81,11 +81,11 @@ run_demo_test() {
     
     echo "--- Testing: $service ---"
     echo "Description: $description"
-    echo "Command: ./scripts/quick_test.sh $service 1KB 10 5"
+    echo "Command: ./scripts/quick_test.sh $service 1KB 10 5 3"
     echo
     
     # Run the test with timeout to prevent hanging
-    if timeout 60 ./scripts/quick_test.sh "$service" 1KB 10 5; then
+    if timeout 60 ./scripts/quick_test.sh "$service" 1KB 10 5 3; then
         echo "✅ Test completed successfully"
         
         # Show the results if CSV was generated

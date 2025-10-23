@@ -85,8 +85,8 @@ main() {
     mkdir -p "$SAMPLES_DIR"
     
     # File sizes in bytes - using regular arrays
-    FILE_NAMES=("1KB" "5KB" "10KB" "100KB" "500KB" "1MB")
-    FILE_SIZES=(1024 5120 10240 102400 512000 1048576)
+    FILE_NAMES=("50B" "100B" "500B" "1KB" "5KB" "10KB" "100KB" "500KB" "1MB")
+    FILE_SIZES=(50 100 500 1024 5120 10240 102400 512000 1048576)
     
     # Generate files
     for i in "${!FILE_NAMES[@]}"; do

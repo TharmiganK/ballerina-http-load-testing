@@ -1,122 +1,15 @@
-A
-AA
-A
-AAA
-AA
-A
-AA
-A
-AAA
-AAA
-AA
-A
-AAA
-AA
-A
-AA
-A
-AAA
-AA
-A
-AA
-A
-AAA
-AAA
-AA
-A
-AAA
-AAA
-AA
-A
-AAA
-AA
-A
-AA
-A
-AAA
-AAA
-AA
-A
-AAA
-AA
-A
-AA
-A
-AAA
-AA
-A
-AA
-A
-AAA
-AAA
-AA
-A
-AAA
-AA
-A
-AA
-A
-AAA
-AA
-A
-AA
-A
-AAA
-AAA
-AA
-A
-AAA
-AAA
-AA
-A
-AAA
-AA
-A
-AA
-A
-AAA
-AAA
-AA
-A
-AAA
-AAA
-AA
-A
-AAA
-AA
-A
-AA
-A
-AAA
-AAA
-AA
-A
-AAA
-AA
-A
-AA
-A
-AAA
-AA
-A
-AA
-A
-AAA
-AAA
-AA
-A
-AAA
-AAA
-AA
-A
-AAA
-AA
-A
-AA
-A
-AAA
-AAA
-AA
-A
-AAA
-AA
+{
+  "metadata": {
+    "timestamp": "2025-09-24T14:39:00Z",
+    "version": "1.0",
+    "type": "load_test_payload"
+  },
+  "data": {
+    "payload": "
+JafIuXRS7vqbdRjfSDFY9Qcgod0pIqIFnSZvTzZkl4mSeyi2vM2mzvaOknKMwq1HviPrJlsssib2ZSRatEYs98GunovMf6VzAeMQPqqGOpyBHT5BgyncMxHyrEUp36G1aoB2oLDaRyhbetIh5d6z46D8ixYrvPbeKmpVSHG3SsvhxsGfLYfj1mvOsrF2QCUZLAqEkTKCWgRUdBxCONtea9VrBUOB2eyZgsAEQUBW6B37iLO0QD3FG0usD4XxGybC1Yy0Oo26OVnOyKS4CgWTKsWiFXkO5jfBthutDTqLLHVDlCRPXYJPFTPVGhg6esSAfkkS92VX7taACZj9IKrJ1Cw6T6j9pma3vWzwompLy63B4WkhVGVOsx2SzLiRC6PXOqD1N9Bf10RSZ4eypdkB4UrjQxM7SagERvHy4CbM9So4m95LIxn5Ct82B6yucpUGVsBHYpInVJsCVgdk9yGqtl8MXkQfGSxqTYjADDTDaGKdjIUeyuqZ79jN4UCjJgUKndkEI1IoKJLIJH9D20CausOGMz0KMaOdwt5IgEz0MJDd8ohOrYZRVQ8TIHgbiR4apqigQp7Sxnp7Jzm1THeigcpsRscRJcr2SexyTOTcohHcsu1p2SzJvIW2Dt4Yby2k8CWyLfXpYA7EnKk6bcYv5sAlCDQqW3h5O5n9VxEWgqQQjCs3WL14Ehym7sJcwItlmxiuJ3xsbx7QUuDkRkF4yei3GZAI6209pKBGXEiDfh0FzfU6ZFmvR0scs2HrVuGUAzaKxmLOD"
+  },
+  "test_info": {
+    "file_size": "1KB.txt",
+    "generated_by": "load_testing_framework"
+  }
+}

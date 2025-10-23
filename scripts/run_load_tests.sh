@@ -129,7 +129,7 @@ FILE_SIZES=()
 CONCURRENT_USERS=()
 SELECTED_SERVICE_NAMES=()
 TEST_DURATION=300  # 5 minutes per test
-RAMP_UP_TIME=30    # 30 seconds ramp up
+WARMUP_TIME=0      # warmup period in seconds (default: 0)
 
 # Restart timing configuration
 BACKEND_RESTART_WAIT=20    # seconds to wait after restarting backends
@@ -206,6 +206,14 @@ parse_arguments() {
                     exit 1
                 fi
                 TEST_DURATION="$2"
+                shift 2
+                ;;
+            --warmup|-w)
+                if [ -z "$2" ] || ! [[ "$2" =~ ^[0-9]+$ ]]; then
+                    error "Warmup must be a positive number (seconds)"
+                    exit 1
+                fi
+                WARMUP_TIME="$2"
                 shift 2
                 ;;
             --help|-h)
@@ -380,7 +388,7 @@ start_backend() {
     stop_backend
     
     # Build command with SSL and HTTP/2 options
-    local cmd="java -jar $NETTY_JAR --ssl $use_ssl --http2 $use_http2 --port $backend_port"
+    local cmd="java -Xmx2G -jar $NETTY_JAR --ssl $use_ssl --http2 $use_http2 --port $backend_port"
     if [ "$use_ssl" = "true" ]; then
         cmd="$cmd --key-store-file ${PROJECT_ROOT}/resources/ballerinaKeystore.p12 --key-store-password ballerina"
     fi
@@ -473,7 +481,7 @@ start_service() {
     
     # Start the service in background
     cd "${BALLERINA_PROJECT_DIR}"
-    nohup java -jar "$BALLERINA_JAR" \
+    nohup java -Xmx2G -jar "$BALLERINA_JAR" \
         -CclientSsl=$client_ssl \
         -CserverSsl=$server_ssl \
         -CclientHttp2=$client_http2 \
@@ -568,7 +576,7 @@ run_load_test() {
     # Run h2load test
     h2load_output="${RESULTS_DIR}/${test_name}_h2load.txt"
     
-    echo "Running h2load test for $service $file_size with $users users..."
+    echo "Running h2load test for $service $file_size with $users users (duration: ${TEST_DURATION}s, warmup: ${WARMUP_TIME}s)..."
     
     # Determine if we should force HTTP/1.1 or use HTTP/2
     # h2load uses HTTP/2 by default for HTTPS connections, HTTP/1.1 for HTTP connections
@@ -587,14 +595,20 @@ run_load_test() {
         fi
     fi
     
+    # Prepare warmup option for h2load
+    WARMUP_OPTION=""
+    if [ "$WARMUP_TIME" -gt 0 ]; then
+        WARMUP_OPTION="--warm-up-time=${WARMUP_TIME}s"
+    fi
+    
     if [ "$protocol" = "https" ]; then
         # For HTTPS
         h2load -c "$users" -t 1 -D "$TEST_DURATION" -d "$data_file" \
-            $H2LOAD_HTTP_VERSION "$test_url" 2>&1 | tee "$h2load_output"
+            $WARMUP_OPTION $H2LOAD_HTTP_VERSION "$test_url" 2>&1 | tee "$h2load_output"
     else
         # For HTTP
         h2load -c "$users" -t 1 -D "$TEST_DURATION" -d "$data_file" \
-            $H2LOAD_HTTP_VERSION "$test_url" 2>&1 | tee "$h2load_output"
+            $WARMUP_OPTION $H2LOAD_HTTP_VERSION "$test_url" 2>&1 | tee "$h2load_output"
     fi
     
     # Convert h2load output to simplified CSV format
@@ -1170,7 +1184,8 @@ EOF
     echo "                    <li>Payload Sizes: <span class=\"highlight\">${#file_sizes_tested[@]}</span> ($(IFS=', '; echo "${file_sizes_tested[*]}"))</li>" >> "$dashboard_file"
     echo "                    <li>User Loads: <span class=\"highlight\">${#users_tested[@]}</span> ($(IFS=', '; echo "${users_tested[*]}"))</li>" >> "$dashboard_file"
     echo "                    <li>Total Tests: <span class=\"highlight\">${#all_results[@]}</span></li>" >> "$dashboard_file"
-    echo "                    <li>Duration: <span class=\"highlight\">${TEST_DURATION}s each</span></li>" >> "$dashboard_file"
+    echo "                    <li>Duration: <span class=\"highlight\">${TEST_DURATION}s each</span></li>
+                    <li>Warmup: <span class=\"highlight\">${WARMUP_TIME}s</span></li>" >> "$dashboard_file"
 
     cat >> "$dashboard_file" << 'EOF'
                 </ul>
@@ -1813,6 +1828,7 @@ OPTIONS (for 'test' command):
     -u, --users USERS                   Comma-separated user counts (e.g., "50,100,500")
     -s, --services SERVICES             Comma-separated service names (e.g., "h1-h1,h2-h2")
     -d, --duration SECONDS              Test duration in seconds (default: 300)
+    -w, --warmup SECONDS                Warmup duration in seconds (default: 0)
     -h, --help                          Show this help message
 
 DESCRIPTION:
@@ -1858,8 +1874,14 @@ EXAMPLES:
     # Test with custom duration (60 seconds)
     ./run_load_tests.sh test --duration 60
     
+    # Test with warmup period (30 seconds)
+    ./run_load_tests.sh test --warmup 30
+    
     # Combination of options
     ./run_load_tests.sh test -f "1KB,100KB" -u "50,200" -s "h1-h1,h2-h2" -d 120
+    
+    # Test with warmup and custom settings
+    ./run_load_tests.sh test -f "1KB,10KB" -u "100" -d 180 -w 15
     
     # Build projects only
     ./run_load_tests.sh build
