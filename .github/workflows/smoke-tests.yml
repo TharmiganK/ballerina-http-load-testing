@@ -2,137 +2,210 @@ name: Smoke Tests
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   smoke-test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Java 21
-      uses: actions/setup-java@v4
-      with:
-        java-version: '21'
-        distribution: 'temurin'
-    
-    - name: Setup Ballerina
-      uses: ballerina-platform/setup-ballerina@v1
-      with:
-        version: 2201.12.8
-    
-    - name: Install h2load
-      run: |
-        # Install nghttp2-client which includes h2load
-        sudo apt-get update -qq
-        sudo apt-get install -y nghttp2-client
-        h2load --version
-    
-    - name: Cache Maven dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.m2
-        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-        restore-keys: ${{ runner.os }}-m2
-    
-    - name: Cache Ballerina dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.ballerina
-        key: ${{ runner.os }}-ballerina-${{ hashFiles('**/Ballerina.toml') }}
-        restore-keys: ${{ runner.os }}-ballerina
+      - uses: actions/checkout@v4
 
-    - name: Build projects
-      run: |
-        # Build Netty backend
-        cd netty-backend
-        mvn clean package -q
-        cd ..
-        
-        # Build Ballerina project
-        cd ballerina-passthrough
-        bal build
-        cd ..
-        
-        # Generate samples
-        chmod +x scripts/generate_samples.sh
-        scripts/generate_samples.sh
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
 
-    - name: Validate environment
-      run: |
-        chmod +x scripts/validate_setup.sh
-        scripts/validate_setup.sh
+      - name: Setup Ballerina
+        uses: ballerina-platform/setup-ballerina@v1
+        with:
+          version: 2201.12.8
 
-    - name: Run quick smoke test
-      run: |
-        chmod +x scripts/quick_test.sh
-        
-        # Run a very short test to validate everything works
-        # Test h1c-h1c (simplest config) with small payload and few users
-        timeout 300 scripts/quick_test.sh h1c-h1c 1KB 5 60 || {
-          echo "Smoke test failed or timed out"
-          
-          # Show logs for debugging
-          echo "=== Service Logs ==="
-          cat quick_results/h1c-h1c.log 2>/dev/null || echo "No service log found"
-          echo "=== Backend Logs ==="
-          cat quick_results/netty_backend.log 2>/dev/null || echo "No backend log found"
-          echo "=== Quick Test Logs ==="
-          cat quick_results/quick_test.log 2>/dev/null || echo "No quick test log found"
-          echo "=== Process Information ==="
-          ps aux | grep -E "(ballerina|netty)" || echo "No relevant processes found"
-          echo "=== Port Usage ==="
-          netstat -tlnp | grep -E "(8688|9094)" || echo "No ports in use"
-          echo "=== Current Directory ==="
-          pwd
-          ls -la quick_results/ 2>/dev/null || echo "No quick_results directory"
-          
-          exit 1
-        }
-    
-    - name: Verify results
-      run: |
-        # Check if results were generated
-        if [ -f quick_results/quick_test_h1c-h1c_1KB_5users.csv ]; then
-          echo "✅ Test results generated successfully"
-          
-          # Parse the simplified CSV format (test_type,total_requests,duration_sec,throughput_rps,avg_latency_ms,error_rate_percent)
-          if [ $(wc -l < quick_results/quick_test_h1c-h1c_1KB_5users.csv) -ge 2 ]; then
-            # Extract values from CSV (skip header line)
-            result_line=$(tail -n 1 quick_results/quick_test_h1c-h1c_1KB_5users.csv)
-            total_requests=$(echo "$result_line" | cut -d',' -f2)
-            throughput=$(echo "$result_line" | cut -d',' -f4)
-            avg_latency=$(echo "$result_line" | cut -d',' -f5)
-            error_rate=$(echo "$result_line" | cut -d',' -f6)
+      - name: Install h2load
+        run: |
+          # Install nghttp2-client which includes h2load
+          sudo apt-get update -qq
+          sudo apt-get install -y nghttp2-client
+          h2load --version
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Cache Ballerina dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.ballerina
+          key: ${{ runner.os }}-ballerina-${{ hashFiles('**/Ballerina.toml') }}
+          restore-keys: ${{ runner.os }}-ballerina
+
+      - name: Build projects
+        run: |
+          # Build Netty backend
+          cd netty-backend
+          mvn clean package -q
+          cd ..
+
+          # Build Ballerina project
+          cd ballerina-passthrough
+          bal build
+          cd ..
+
+          # Generate samples
+          chmod +x scripts/generate_samples.sh
+          scripts/generate_samples.sh
+
+      - name: Validate environment
+        run: |
+          chmod +x scripts/validate_setup.sh
+          scripts/validate_setup.sh
+
+      - name: Run quick smoke test
+        run: |
+          chmod +x scripts/quick_test.sh
+
+          # Run a very short test to validate everything works
+          # Test h1c-h1c (HTTP/1.1 clear text - simplest config) with small payload and few users
+          timeout 300 scripts/quick_test.sh h1c-h1c 1KB 5 60 || {
+            echo "HTTP/1.1 smoke test failed or timed out"
             
-            echo "📊 Total requests: $total_requests"
-            echo "🚀 Throughput: $throughput req/s"
-            echo "⏱️  Average latency: ${avg_latency}ms"
-            echo "❌ Error rate: ${error_rate}%"
+            # Show logs for debugging
+            echo "=== Service Logs ==="
+            cat quick_results/h1c-h1c.log 2>/dev/null || echo "No service log found"
+            echo "=== Backend Logs ==="
+            cat quick_results/netty_backend.log 2>/dev/null || echo "No backend log found"
+            echo "=== Quick Test Logs ==="
+            cat quick_results/quick_test.log 2>/dev/null || echo "No quick test log found"
+            echo "=== Process Information ==="
+            ps aux | grep -E "(ballerina|netty)" || echo "No relevant processes found"
+            echo "=== Port Usage ==="
+            netstat -tlnp | grep -E "(8688|9094)" || echo "No ports in use"
+            echo "=== Current Directory ==="
+            pwd
+            ls -la quick_results/ 2>/dev/null || echo "No quick_results directory"
             
-            # Check if test was successful (has requests and low error rate)
-            if [ "$total_requests" -gt 0 ] && [ "$(awk "BEGIN {print ($error_rate < 5.0)}")" = "1" ]; then
-              echo "✅ Smoke test passed successfully!"
+            exit 1
+          }
+
+      - name: Run HTTP/2 smoke test
+        run: |
+          # Clean up from previous test
+          pkill -f "ballerina" || true
+          pkill -f "netty" || true
+          sleep 2
+
+          # Test h2c-h2c (HTTP/2 clear text) with small payload and few users
+          timeout 300 scripts/quick_test.sh h2c-h2c 1KB 5 60 || {
+            echo "HTTP/2 smoke test failed or timed out"
+            
+            # Show logs for debugging
+            echo "=== Service Logs ==="
+            cat quick_results/h2c-h2c.log 2>/dev/null || echo "No service log found"
+            echo "=== Backend Logs ==="
+            cat quick_results/netty_backend.log 2>/dev/null || echo "No backend log found"
+            echo "=== Quick Test Logs ==="
+            cat quick_results/quick_test.log 2>/dev/null || echo "No quick test log found"
+            echo "=== Process Information ==="
+            ps aux | grep -E "(ballerina|netty)" || echo "No relevant processes found"
+            echo "=== Port Usage ==="
+            netstat -tlnp | grep -E "(8701|9098)" || echo "No ports in use"
+            echo "=== Current Directory ==="
+            pwd
+            ls -la quick_results/ 2>/dev/null || echo "No quick_results directory"
+            
+            exit 1
+          }
+
+      - name: Verify results
+        run: |
+          # Check HTTP/1.1 test results
+          if [ -f quick_results/quick_test_h1c-h1c_1KB_5users.csv ]; then
+            echo "✅ HTTP/1.1 test results generated successfully"
+            
+            # Parse the simplified CSV format
+            if [ $(wc -l < quick_results/quick_test_h1c-h1c_1KB_5users.csv) -ge 2 ]; then
+              result_line=$(tail -n 1 quick_results/quick_test_h1c-h1c_1KB_5users.csv)
+              total_requests=$(echo "$result_line" | cut -d',' -f2)
+              throughput=$(echo "$result_line" | cut -d',' -f4)
+              avg_latency=$(echo "$result_line" | cut -d',' -f5)
+              error_rate=$(echo "$result_line" | cut -d',' -f6)
+              
+              echo "📊 HTTP/1.1 Results:"
+              echo "   Total requests: $total_requests"
+              echo "   Throughput: $throughput req/s"
+              echo "   Average latency: ${avg_latency}ms"
+              echo "   Error rate: ${error_rate}%"
+              
+              # Check if test was successful
+              if [ "$total_requests" -gt 0 ] && [ "$(awk "BEGIN {print ($error_rate < 5.0)}")" = "1" ]; then
+                echo "✅ HTTP/1.1 smoke test passed!"
+                HTTP1_PASSED=true
+              else
+                echo "❌ HTTP/1.1 smoke test failed - insufficient requests or high error rate"
+                HTTP1_PASSED=false
+              fi
             else
-              echo "❌ Smoke test failed - insufficient requests or high error rate"
-              exit 1
+              echo "❌ No HTTP/1.1 test data recorded in CSV"
+              HTTP1_PASSED=false
             fi
           else
-            echo "❌ No test data recorded in CSV"
+            echo "❌ No HTTP/1.1 test results file found"
+            HTTP1_PASSED=false
+          fi
+
+          # Check HTTP/2 test results
+          if [ -f quick_results/quick_test_h2c-h2c_1KB_5users.csv ]; then
+            echo "✅ HTTP/2 test results generated successfully"
+            
+            # Parse the simplified CSV format
+            if [ $(wc -l < quick_results/quick_test_h2c-h2c_1KB_5users.csv) -ge 2 ]; then
+              result_line=$(tail -n 1 quick_results/quick_test_h2c-h2c_1KB_5users.csv)
+              total_requests=$(echo "$result_line" | cut -d',' -f2)
+              throughput=$(echo "$result_line" | cut -d',' -f4)
+              avg_latency=$(echo "$result_line" | cut -d',' -f5)
+              error_rate=$(echo "$result_line" | cut -d',' -f6)
+              
+              echo "📊 HTTP/2 Results:"
+              echo "   Total requests: $total_requests"
+              echo "   Throughput: $throughput req/s"
+              echo "   Average latency: ${avg_latency}ms"
+              echo "   Error rate: ${error_rate}%"
+              
+              # Check if test was successful
+              if [ "$total_requests" -gt 0 ] && [ "$(awk "BEGIN {print ($error_rate < 5.0)}")" = "1" ]; then
+                echo "✅ HTTP/2 smoke test passed!"
+                HTTP2_PASSED=true
+              else
+                echo "❌ HTTP/2 smoke test failed - insufficient requests or high error rate"
+                HTTP2_PASSED=false
+              fi
+            else
+              echo "❌ No HTTP/2 test data recorded in CSV"
+              HTTP2_PASSED=false
+            fi
+          else
+            echo "❌ No HTTP/2 test results file found"
+            HTTP2_PASSED=false
+          fi
+
+          # Overall result
+          if [ "$HTTP1_PASSED" = "true" ] && [ "$HTTP2_PASSED" = "true" ]; then
+            echo "🎉 All smoke tests passed successfully!"
+          else
+            echo "❌ One or more smoke tests failed"
             exit 1
           fi
-        else
-          echo "❌ No test results file found"
-          exit 1
-        fi
-    
-    - name: Upload smoke test results
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: smoke-test-results
-        path: |
-          quick_results/
-        retention-days: 7
+
+      - name: Upload smoke test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-test-results
+          path: |
+            quick_results/
+          retention-days: 7

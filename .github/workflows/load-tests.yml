@@ -4,42 +4,57 @@ on:
   workflow_dispatch:
     inputs:
       service_type:
-        description: 'Service type to test (h1-h1, h1c-h1, h1-h1c, h1c-h1c, or all)'
+        description: "Service type to test (HTTP/1.1, HTTP/2, mixed protocols, or all)"
         required: false
-        default: 'all'
+        default: "http1-only"
         type: choice
         options:
-        - all
-        - h1-h1
-        - h1c-h1
-        - h1-h1c
-        - h1c-h1c
+          - all
+          - http1-only
+          - http2-only
+          - mixed-protocols
+          - h1-h1
+          - h1c-h1
+          - h1-h1c
+          - h1c-h1c
+          - h2-h2
+          - h2c-h2
+          - h2-h2c
+          - h2c-h2c
+          - h1-h2
+          - h1c-h2
+          - h1-h2c
+          - h1c-h2c
+          - h2-h1
+          - h2c-h1
+          - h2-h1c
+          - h2c-h1c
       payload_sizes:
-        description: 'Payload sizes to test (comma-separated: 1KB,5KB,10KB,100KB,500KB,1MB)'
+        description: "Payload sizes to test (comma-separated: 1KB,5KB,10KB,100KB,500KB,1MB)"
         required: false
-        default: '10KB,100KB,1MB'
+        default: "10KB,100KB,1MB"
       user_counts:
-        description: 'User counts to test (comma-separated: 50,100,500)'
+        description: "User counts to test (comma-separated: 50,100,500)"
         required: false
-        default: '50,100'
+        default: "50,100"
       test_duration:
-        description: 'Test duration in seconds'
+        description: "Test duration in seconds"
         required: false
-        default: '300'
+        default: "300"
         type: number
       java_version:
-        description: 'Java version to use'
+        description: "Java version to use"
         required: false
-        default: '21'
+        default: "21"
         type: choice
         options:
-        - '11'
-        - '17'
-        - '21'
+          - "11"
+          - "17"
+          - "21"
       ballerina_version:
-        description: 'Ballerina version to use'
+        description: "Ballerina version to use"
         required: false
-        default: '2201.12.8'
+        default: "2201.12.8"
 
 jobs:
   build-projects:
@@ -47,97 +62,110 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Java ${{ github.event.inputs.java_version || '17' }}
-      uses: actions/setup-java@v4
-      with:
-        java-version: ${{ github.event.inputs.java_version || '17' }}
-        distribution: 'temurin'
-    
-    - name: Setup Ballerina
-      uses: ballerina-platform/setup-ballerina@v1
-      with:
-        version: ${{ github.event.inputs.ballerina_version || '2201.12.8' }}
-    
-    - name: Install h2load
-      run: |
-        # Install nghttp2-client which includes h2load
-        sudo apt-get update -qq
-        sudo apt-get install -y nghttp2-client
-        h2load --version
-    
-    - name: Cache Maven dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.m2
-        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-        restore-keys: ${{ runner.os }}-m2
-    
-    - name: Cache Ballerina dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.ballerina
-        key: ${{ runner.os }}-ballerina-${{ hashFiles('**/Ballerina.toml') }}
-        restore-keys: ${{ runner.os }}-ballerina
-    
-    - name: Build Netty backend
-      run: |
-        cd netty-backend
-        mvn clean package -q
-        ls -la target/
-    
-    - name: Build Ballerina project
-      run: |
-        cd ballerina-passthrough
-        bal build
-        ls -la target/bin/
-    
-    - name: Generate test samples
-      run: |
-        chmod +x scripts/generate_samples.sh
-        scripts/generate_samples.sh
+      - uses: actions/checkout@v4
 
-    - name: Validate environment
-      run: |
-        chmod +x scripts/validate_setup.sh
-        scripts/validate_setup.sh
+      - name: Set up Java ${{ github.event.inputs.java_version || '17' }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ github.event.inputs.java_version || '17' }}
+          distribution: "temurin"
 
-    - name: Set up test matrix
-      id: set-matrix
-      run: |
-        # Parse workflow inputs or use defaults
-        SERVICE_TYPE="${{ github.event.inputs.service_type || 'h1-h1,h1c-h1c' }}"
-        PAYLOAD_SIZES="${{ github.event.inputs.payload_sizes || '1KB,5KB' }}"
-        USER_COUNTS="${{ github.event.inputs.user_counts || '50,100' }}"
-        
-        # Convert service types
-        if [ "$SERVICE_TYPE" = "all" ]; then
-          SERVICES="[\"h1-h1\", \"h1c-h1\", \"h1-h1c\", \"h1c-h1c\"]"
-        else
-          SERVICES="[$(echo "$SERVICE_TYPE" | sed 's/,/", "/g' | sed 's/^/"/; s/$/"/')]"
-        fi
-        
-        # Convert payload sizes
-        PAYLOADS="[$(echo "$PAYLOAD_SIZES" | sed 's/,/", "/g' | sed 's/^/"/; s/$/"/')]"
-        
-        # Convert user counts
-        USERS="[$(echo "$USER_COUNTS" | sed 's/,/, /g')]"
-        
-        # Create matrix JSON
-        MATRIX="{\"service\": $SERVICES, \"payload\": $PAYLOADS, \"users\": $USERS}"
-        echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
-        echo "Generated matrix: $MATRIX"
-    
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifacts
-        path: |
-          netty-backend/target/netty-http-echo-service.jar
-          ballerina-passthrough/target/bin/ballerina_passthrough.jar
-          samples/
-        retention-days: 1
+      - name: Setup Ballerina
+        uses: ballerina-platform/setup-ballerina@v1
+        with:
+          version: ${{ github.event.inputs.ballerina_version || '2201.12.8' }}
+
+      - name: Install h2load
+        run: |
+          # Install nghttp2-client which includes h2load
+          sudo apt-get update -qq
+          sudo apt-get install -y nghttp2-client
+          h2load --version
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Cache Ballerina dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.ballerina
+          key: ${{ runner.os }}-ballerina-${{ hashFiles('**/Ballerina.toml') }}
+          restore-keys: ${{ runner.os }}-ballerina
+
+      - name: Build Netty backend
+        run: |
+          cd netty-backend
+          mvn clean package -q
+          ls -la target/
+
+      - name: Build Ballerina project
+        run: |
+          cd ballerina-passthrough
+          bal build
+          ls -la target/bin/
+
+      - name: Generate test samples
+        run: |
+          chmod +x scripts/generate_samples.sh
+          scripts/generate_samples.sh
+
+      - name: Validate environment
+        run: |
+          chmod +x scripts/validate_setup.sh
+          scripts/validate_setup.sh
+
+      - name: Set up test matrix
+        id: set-matrix
+        run: |
+          # Parse workflow inputs or use defaults
+          SERVICE_TYPE="${{ github.event.inputs.service_type || 'http1-only' }}"
+          PAYLOAD_SIZES="${{ github.event.inputs.payload_sizes || '1KB,5KB' }}"
+          USER_COUNTS="${{ github.event.inputs.user_counts || '50,100' }}"
+
+          # Convert service types based on selection
+          case "$SERVICE_TYPE" in
+            "all")
+              SERVICES="[\"h1-h1\", \"h1c-h1\", \"h1-h1c\", \"h1c-h1c\", \"h2-h2\", \"h2c-h2\", \"h2-h2c\", \"h2c-h2c\", \"h1-h2\", \"h1c-h2\", \"h1-h2c\", \"h1c-h2c\", \"h2-h1\", \"h2c-h1\", \"h2-h1c\", \"h2c-h1c\"]"
+              ;;
+            "http1-only")
+              SERVICES="[\"h1-h1\", \"h1c-h1\", \"h1-h1c\", \"h1c-h1c\"]"
+              ;;
+            "http2-only")
+              SERVICES="[\"h2-h2\", \"h2c-h2\", \"h2-h2c\", \"h2c-h2c\"]"
+              ;;
+            "mixed-protocols")
+              SERVICES="[\"h1-h2\", \"h1c-h2\", \"h1-h2c\", \"h1c-h2c\", \"h2-h1\", \"h2c-h1\", \"h2-h1c\", \"h2c-h1c\"]"
+              ;;
+            *)
+              # Single service type specified
+              SERVICES="[\"$SERVICE_TYPE\"]"
+              ;;
+          esac
+
+          # Convert payload sizes
+          PAYLOADS="[$(echo "$PAYLOAD_SIZES" | sed 's/,/", "/g' | sed 's/^/"/; s/$/"/')]"
+
+          # Convert user counts
+          USERS="[$(echo "$USER_COUNTS" | sed 's/,/, /g')]"
+
+          # Create matrix JSON
+          MATRIX="{\"service\": $SERVICES, \"payload\": $PAYLOADS, \"users\": $USERS}"
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "Generated matrix: $MATRIX"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            netty-backend/target/netty-http-echo-service.jar
+            ballerina-passthrough/target/bin/ballerina_passthrough.jar
+            samples/
+          retention-days: 1
 
   load-tests:
     needs: build-projects
@@ -146,207 +174,280 @@ jobs:
       matrix: ${{ fromJson(needs.build-projects.outputs.matrix) }}
       fail-fast: false
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Java ${{ github.event.inputs.java_version || '17' }}
-      uses: actions/setup-java@v4
-      with:
-        java-version: ${{ github.event.inputs.java_version || '17' }}
-        distribution: 'temurin'
-    
-    - name: Setup Ballerina
-      uses: ballerina-platform/setup-ballerina@v1
-      with:
-        version: ${{ github.event.inputs.ballerina_version || '2201.12.8' }}
-    
-    - name: Install h2load
-      run: |
-        # Install nghttp2-client which includes h2load
-        sudo apt-get update -qq
-        sudo apt-get install -y nghttp2-client
-    
-    - name: Download build artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: build-artifacts
-    
-    - name: Restore file permissions
-      run: |
-        chmod +x scripts/*.sh
-        chmod +x netty-backend/target/netty-http-echo-service.jar
-        chmod +x ballerina-passthrough/target/bin/ballerina_passthrough.jar
-    
-    - name: Create results directory
-      run: mkdir -p results reports
-    
-    - name: Run load test for ${{ matrix.service }}-${{ matrix.payload }}-${{ matrix.users }}users
-      run: |
-        TEST_DURATION="${{ github.event.inputs.test_duration || '180' }}"
-        
-        # Export test parameters
-        export SERVICE="${{ matrix.service }}"
-        export PAYLOAD_SIZE="${{ matrix.payload }}"
-        export USERS="${{ matrix.users }}"
-        export DURATION="$TEST_DURATION"
-        
-        echo "Running load test for service: $SERVICE, payload: $PAYLOAD_SIZE, users: $USERS, duration: ${DURATION}s"
-        
-        # Run the quick test script
-        scripts/quick_test.sh "$SERVICE" "$PAYLOAD_SIZE" "$USERS" "$DURATION"
-      timeout-minutes: 15
-    
-    - name: Upload test results
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: test-results-${{ matrix.service }}-${{ matrix.payload }}-${{ matrix.users }}users
-        path: |
-          quick_results/
-          results/
-        retention-days: 30
+      - uses: actions/checkout@v4
+
+      - name: Set up Java ${{ github.event.inputs.java_version || '17' }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ github.event.inputs.java_version || '17' }}
+          distribution: "temurin"
+
+      - name: Setup Ballerina
+        uses: ballerina-platform/setup-ballerina@v1
+        with:
+          version: ${{ github.event.inputs.ballerina_version || '2201.12.8' }}
+
+      - name: Install h2load
+        run: |
+          # Install nghttp2-client which includes h2load
+          sudo apt-get update -qq
+          sudo apt-get install -y nghttp2-client
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+
+      - name: Restore file permissions
+        run: |
+          chmod +x scripts/*.sh
+          chmod +x netty-backend/target/netty-http-echo-service.jar
+          chmod +x ballerina-passthrough/target/bin/ballerina_passthrough.jar
+
+      - name: Create results directory
+        run: mkdir -p results reports
+
+      - name: Run load test for ${{ matrix.service }}-${{ matrix.payload }}-${{ matrix.users }}users
+        run: |
+          TEST_DURATION="${{ github.event.inputs.test_duration || '180' }}"
+
+          # Export test parameters
+          export SERVICE="${{ matrix.service }}"
+          export PAYLOAD_SIZE="${{ matrix.payload }}"
+          export USERS="${{ matrix.users }}"
+          export DURATION="$TEST_DURATION"
+
+          echo "Running load test for service: $SERVICE, payload: $PAYLOAD_SIZE, users: $USERS, duration: ${DURATION}s"
+
+          # Run the quick test script
+          scripts/quick_test.sh "$SERVICE" "$PAYLOAD_SIZE" "$USERS" "$DURATION"
+        timeout-minutes: 15
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.service }}-${{ matrix.payload }}-${{ matrix.users }}users
+          path: |
+            quick_results/
+            results/
+          retention-days: 30
 
   generate-report:
     needs: [build-projects, load-tests]
     runs-on: ubuntu-latest
     if: always()
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Download all test results
-      uses: actions/download-artifact@v4
-      with:
-        path: all-results/
-        pattern: test-results-*
-    
-    - name: Generate consolidated report
-      run: |
-        mkdir -p consolidated-report
-        
-        # Create report header
-        cat << 'EOF' > consolidated-report/load-test-report.md
-        # Load Test Results Report
-        
-        **Test Run Date**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")  
-        **Commit**: ${{ github.sha }}  
-        **Branch**: ${{ github.ref_name }}  
-        **Trigger**: ${{ github.event_name }}
-        
-        ## Test Summary
-        
-        EOF
-        
-        # Process each result directory
-        echo "| Service | Payload | Users | Status | Results File |" >> consolidated-report/load-test-report.md
-        echo "|---------|---------|-------|---------|--------------|" >> consolidated-report/load-test-report.md
-        
-        for result_dir in all-results/test-results-*/; do
-          if [ -d "$result_dir" ]; then
-            # Extract test parameters from directory name
-            dirname=$(basename "$result_dir")
-            service=$(echo "$dirname" | sed 's/test-results-//' | sed 's/-[^-]*-[^-]*$//')
-            remaining=$(echo "$dirname" | sed "s/test-results-$service-//")
-            payload=$(echo "$remaining" | sed 's/-[^-]*$//')
-            users=$(echo "$remaining" | sed "s/$payload-//")
-            
-            # Check if results exist (CSV files from h2load)
-            if ls "$result_dir"/quick_results/*.csv >/dev/null 2>&1; then
-              status="✅ Completed"
-              result_file=$(ls "$result_dir"/quick_results/*.csv | head -1 | xargs basename)
-            else
-              status="❌ Failed"
-              result_file="N/A"
+      - uses: actions/checkout@v4
+
+      - name: Set up Java ${{ github.event.inputs.java_version || '17' }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ github.event.inputs.java_version || '17' }}
+          distribution: "temurin"
+
+      - name: Setup Ballerina
+        uses: ballerina-platform/setup-ballerina@v1
+        with:
+          version: ${{ github.event.inputs.ballerina_version || '2201.12.8' }}
+
+      - name: Download all test results
+        uses: actions/download-artifact@v4
+        with:
+          path: all-results/
+          pattern: test-results-*
+
+      - name: Consolidate and convert results
+        run: |
+          mkdir -p results consolidated-report
+          chmod +x scripts/*.sh
+
+          # Move all result files to the results directory for processing
+          echo "Consolidating test result files..."
+          for result_dir in all-results/test-results-*/; do
+            if [ -d "$result_dir" ]; then
+              # Copy CSV files to results directory
+              find "$result_dir" -name "*.csv" -exec cp {} results/ \; 2>/dev/null || true
+              # Copy JTL files to results directory  
+              find "$result_dir" -name "*.jtl" -exec cp {} results/ \; 2>/dev/null || true
+              echo "Processed: $(basename "$result_dir")"
             fi
+          done
+
+          # List consolidated files for verification
+          echo "Consolidated result files:"
+          ls -la results/ || echo "No result files found"
+
+      - name: Generate HTML Reports
+        run: |
+          # Generate enhanced HTML reports with interactive charts
+          echo "Generating HTML reports with interactive dashboard..."
+          ./scripts/run_load_tests.sh reports || {
+            echo "Report generation failed, attempting fallback..."
             
-            echo "| $service | $payload | $users | $status | $result_file |" >> consolidated-report/load-test-report.md
-          fi
-        done
-        
-        # Add detailed results section
-        cat << 'EOF' >> consolidated-report/load-test-report.md
-        
-        ## Detailed Results
-        
-        The following sections contain detailed metrics for each test run:
-        
-        EOF
-        
-        # Process CSV files for basic statistics (h2load format)
-        for result_dir in all-results/test-results-*/; do
-          if [ -d "$result_dir" ] && ls "$result_dir"/quick_results/*.csv >/dev/null 2>&1; then
-            dirname=$(basename "$result_dir")
-            service=$(echo "$dirname" | sed 's/test-results-//' | sed 's/-[^-]*-[^-]*$//')
-            remaining=$(echo "$dirname" | sed "s/test-results-$service-//")
-            payload=$(echo "$remaining" | sed 's/-[^-]*$//')
-            users=$(echo "$remaining" | sed "s/$payload-//")
-            
-            csv_file=$(ls "$result_dir"/quick_results/*.csv | head -1)
-            
-            if [ -f "$csv_file" ]; then
-              echo "### $service - $payload - $users" >> consolidated-report/load-test-report.md
-              echo "" >> consolidated-report/load-test-report.md
-              
-              # Parse simplified CSV format (test_type,total_requests,duration_sec,throughput_rps,avg_latency_ms,error_rate_percent)
-              if [ $(wc -l < "$csv_file") -ge 2 ]; then
-                result_line=$(tail -n 1 "$csv_file")
-                total_requests=$(echo "$result_line" | cut -d',' -f2)
-                duration=$(echo "$result_line" | cut -d',' -f3)
-                throughput=$(echo "$result_line" | cut -d',' -f4)
-                avg_latency=$(echo "$result_line" | cut -d',' -f5)
-                error_rate=$(echo "$result_line" | cut -d',' -f6)
-                success_rate=$(awk "BEGIN {printf \"%.2f\", 100.0 - $error_rate}")
+            # Fallback: create basic HTML report
+            mkdir -p reports
+            cat << 'EOF' > reports/dashboard.html
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Load Test Results</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 40px; }
+                    .header { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+                    .error { background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 4px; }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>🚀 Load Test Results</h1>
+                    <p><strong>Test Run Date:</strong> $(date -u "+%Y-%m-%d %H:%M:%S UTC")</p>
+                    <p><strong>Commit:</strong> ${{ github.sha }}</p>
+                    <p><strong>Branch:</strong> ${{ github.ref_name }}</p>
+                </div>
                 
-                echo "- **Total Requests**: $total_requests" >> consolidated-report/load-test-report.md
-                echo "- **Duration**: ${duration}s" >> consolidated-report/load-test-report.md
-                echo "- **Throughput**: $throughput req/s" >> consolidated-report/load-test-report.md
-                echo "- **Average Latency**: ${avg_latency}ms" >> consolidated-report/load-test-report.md
-                echo "- **Success Rate**: ${success_rate}%" >> consolidated-report/load-test-report.md
-                echo "- **Error Rate**: ${error_rate}%" >> consolidated-report/load-test-report.md
-                echo "" >> consolidated-report/load-test-report.md
-              else
-                echo "- **Status**: No test data recorded" >> consolidated-report/load-test-report.md
-                echo "" >> consolidated-report/load-test-report.md
-              fi
-            fi
-          fi
-        done
-        
-        # Copy all results to consolidated report
-        cp -r all-results/* consolidated-report/ 2>/dev/null || true
-    
-    - name: Upload consolidated report
-      uses: actions/upload-artifact@v4
-      with:
-        name: load-test-report
-        path: consolidated-report/
-        retention-days: 90
-    
-    - name: Comment PR with results
-      if: github.event_name == 'pull_request'
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const fs = require('fs');
-          if (fs.existsSync('consolidated-report/load-test-report.md')) {
-            const report = fs.readFileSync('consolidated-report/load-test-report.md', 'utf8');
+                <div class="error">
+                    <h3>⚠️ Report Generation Issue</h3>
+                    <p>The enhanced HTML dashboard could not be generated. This may be due to missing result files or incomplete test runs.</p>
+                    <p>Please check the test execution logs and ensure all tests completed successfully.</p>
+                </div>
+                
+                <h2>Available Result Files</h2>
+                <ul>
+            EOF
             
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: report
-            });
+            # List available files in fallback report
+            for file in results/*; do
+              if [ -f "$file" ]; then
+                echo "<li>$(basename "$file")</li>" >> reports/dashboard.html
+              fi
+            done
+            
+            echo "</ul></body></html>" >> reports/dashboard.html
           }
+
+          # Verify report generation
+          if [ -f "reports/dashboard.html" ]; then
+            echo "✅ HTML dashboard generated successfully"
+            echo "Dashboard size: $(du -h reports/dashboard.html | cut -f1)"
+          else
+            echo "❌ HTML dashboard generation failed"
+            exit 1
+          fi
+
+      - name: Generate Summary Report
+        run: |
+          # Create a markdown summary for GitHub
+          cat << 'EOF' > consolidated-report/load-test-summary.md
+          # 🚀 Load Test Results Summary
+
+          **Test Run Date**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")  
+          **Commit**: ${{ github.sha }}  
+          **Branch**: ${{ github.ref_name }}  
+          **Trigger**: ${{ github.event_name }}
+          **Service Types**: ${{ github.event.inputs.service_type || 'http1-only' }}
+          **Payload Sizes**: ${{ github.event.inputs.payload_sizes || '1KB,5KB' }}
+          **User Counts**: ${{ github.event.inputs.user_counts || '50,100' }}
+          **Test Duration**: ${{ github.event.inputs.test_duration || '300' }}s
+
+          ## 📊 Test Matrix Coverage
+
+          EOF
+
+          # Process each result directory for summary
+          echo "| Service | Payload | Users | Status | Throughput | Latency | Error Rate |" >> consolidated-report/load-test-summary.md
+          echo "|---------|---------|-------|---------|------------|---------|------------|" >> consolidated-report/load-test-summary.md
+
+          for result_dir in all-results/test-results-*/; do
+            if [ -d "$result_dir" ]; then
+              # Extract test parameters from directory name
+              dirname=$(basename "$result_dir")
+              service=$(echo "$dirname" | sed 's/test-results-//' | sed 's/-[^-]*-[^-]*$//')
+              remaining=$(echo "$dirname" | sed "s/test-results-$service-//")
+              payload=$(echo "$remaining" | sed 's/-[^-]*$//')
+              users=$(echo "$remaining" | sed "s/$payload-//")
+              
+              # Check if results exist and extract metrics
+              csv_files=$(find "$result_dir" -name "*.csv" 2>/dev/null)
+              if [ -n "$csv_files" ]; then
+                csv_file=$(echo "$csv_files" | head -1)
+                if [ -f "$csv_file" ] && [ $(wc -l < "$csv_file") -ge 2 ]; then
+                  result_line=$(tail -n 1 "$csv_file")
+                  throughput=$(echo "$result_line" | cut -d',' -f4)
+                  avg_latency=$(echo "$result_line" | cut -d',' -f5)
+                  error_rate=$(echo "$result_line" | cut -d',' -f6)
+                  
+                  status="✅ Completed"
+                  throughput_display="${throughput} req/s"
+                  latency_display="${avg_latency}ms"
+                  error_display="${error_rate}%"
+                else
+                  status="❌ No Data"
+                  throughput_display="N/A"
+                  latency_display="N/A" 
+                  error_display="N/A"
+                fi
+              else
+                status="❌ Failed"
+                throughput_display="N/A"
+                latency_display="N/A"
+                error_display="N/A"
+              fi
+              
+              echo "| $service | $payload | $users | $status | $throughput_display | $latency_display | $error_display |" >> consolidated-report/load-test-summary.md
+            fi
+          done
+
+          echo "" >> consolidated-report/load-test-summary.md
+          echo "## 📈 Interactive Dashboard" >> consolidated-report/load-test-summary.md
+          echo "" >> consolidated-report/load-test-summary.md
+          echo "An interactive HTML dashboard with charts and filtering capabilities has been generated." >> consolidated-report/load-test-summary.md
+          echo "Download the \`load-test-report\` artifact to view the complete results." >> consolidated-report/load-test-summary.md
+          echo "" >> consolidated-report/load-test-summary.md
+          echo "### Dashboard Features" >> consolidated-report/load-test-summary.md
+          echo "- 📊 **Grouped Bar Charts**: Service performance comparison by payload size" >> consolidated-report/load-test-summary.md
+          echo "- 🔍 **Interactive Filtering**: Filter by payload size and user count" >> consolidated-report/load-test-summary.md
+          echo "- 📈 **Performance Matrix**: Throughput vs Latency scatter plot" >> consolidated-report/load-test-summary.md
+          echo "- 📋 **Detailed Results Table**: Complete test metrics with links to individual reports" >> consolidated-report/load-test-summary.md
+          echo "- 🎯 **Service Type Support**: HTTP/1.1, HTTP/2, and mixed protocol configurations" >> consolidated-report/load-test-summary.md
+
+      - name: Upload HTML Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-report
+          path: |
+            reports/
+            consolidated-report/
+            all-results/
+          retention-days: 90
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (fs.existsSync('consolidated-report/load-test-summary.md')) {
+              const report = fs.readFileSync('consolidated-report/load-test-summary.md', 'utf8');
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: report
+              });
+            }
 
   cleanup:
     needs: [load-tests, generate-report]
     runs-on: ubuntu-latest
     if: always()
     steps:
-    - name: Cleanup workspace
-      run: |
-        # Remove any remaining processes
-        pkill -f "ballerina" || true
-        pkill -f "netty" || true
-        pkill -f "java.*jar" || true
-        
-        echo "Cleanup completed"
+      - name: Cleanup workspace
+        run: |
+          # Remove any remaining processes
+          pkill -f "ballerina" || true
+          pkill -f "netty" || true
+          pkill -f "java.*jar" || true
+
+          echo "Cleanup completed"
